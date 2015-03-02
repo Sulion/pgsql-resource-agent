@@ -36,6 +36,7 @@ function pgsql_validate_all() {
     check_binary "${OCF_RESKEY_bindir}/psql"
     check_binary "${OCF_RESKEY_bindir}/pg_controldata"
     check_binary "${HA_SBIN_DIR}/crm_master"
+    check_binary "cp"
     check_binary "sed"
     check_binary "grep"
 
@@ -186,6 +187,14 @@ pg_start() {
 
     # From here, the instance is NOT running for sure
 
+    # create the recovery.conf file
+    cp -f "${OCF_RESKEY_recovery_template}" "${OCF_RESKEY_pgdata}/recovery.conf" &> /dev/null
+    rc=$?
+
+    if [ $rc -ne 0 ]; then
+        return $OCF_ERR_GENERIC
+    fi
+
     service "${OCF_RESKEY_service}" start
     rc=$?
 
@@ -244,14 +253,14 @@ pg_monitor() {
 
     # check if PostgreSQL is running or not
     if [ $rc -eq 0 ]; then
-	ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is running."
+        ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is running."
     elif [ $rc -eq 3 ]; then
-	ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is not running."
-	return $OCF_NOT_RUNNING
+        ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is not running."
+        return $OCF_NOT_RUNNING
     else
-	# PostgreSQL state is unknown
-	ocf_log error "$__OCF_ACTION - pg_monitor : status of instance $OCF_RESOURCE_INSTANCE is unknown."
-	return $OCF_ERR_GENERIC
+        # PostgreSQL state is unknown
+        ocf_log error "$__OCF_ACTION - pg_monitor : status of instance $OCF_RESOURCE_INSTANCE is unknown."
+        return $OCF_ERR_GENERIC
     fi
 
     # At this point, instance must be running
@@ -260,15 +269,15 @@ pg_monitor() {
     is_in_recovery=$(runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/psql -AtX -p "${OCF_RESKEY_pgport}" -c 'SELECT pg_is_in_recovery()'")
     if [ $? -ne 0 ]; then
         # FIXME try to check which state the instance was
-	ocf_log error "$__OCF_ACTION - pg_monitor : could not check if instance $OCF_RESOURCE_INSTANCE is Primary or Secondary."
+        ocf_log error "$__OCF_ACTION - pg_monitor : could not check if instance $OCF_RESOURCE_INSTANCE is Primary or Secondary."
         return $OCF_ERR_GENERIC
     fi
 
     if [ "$is_in_recovery" = "t" ]; then
-	ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is running as Primary."
+        ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is running as Primary."
         return $OCF_SUCCESS
     elif [ "$is_in_recovery" = "f" ]; then
-	ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is running as Secondary."
+        ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is running as Secondary."
         return $OCF_RUNNING_MASTER
     fi
 
@@ -286,20 +295,25 @@ pg_notify() {
 
 }
 
-# Actions
-#start   Start the resource      Return 0 on success and an appropriate error code otherwise. Must not report success until the resource is fully active.
-#stop    Stop the resource       Return 0 on success and an appropriate error code otherwise. Must not report success until the resource is fully stopped.
-#monitor         Check the resource's state      Exit 0 if the resource is running, 7 if it is stopped and anything else if it is failed.
-#NOTE: The monitor script should test the state of the resource on the local machine only.
-#meta-data       Describe the resource   Provide information about this resource as an XML snippet. Exit with 0.
-#NOTE: This is not performed as root.
-#validate-all    Verify the supplied parameters are correct      Exit with 0 if parameters are valid, 2 if not valid, 6 if resource is not configured.
 
+# Validate everything is fine before running the actions
 case $1 in
-    start) ;;
+    start|stop|reload|monitor|promote|demote|notify)
+        pgsql_validate_all || exit $? ;;
+    # no need to validate for meta-data, methods or validate-all
+esac
+
+
+# Run action
+case $1 in
+    start)
+        pg_start
+        exit $?;;
     stop) ;;
     reload) ;;
-    monitor) ;;
+    monitor)
+        pg_monitor
+        exit $?;;
     promote) ;;
     demote) ;;
     notify) ;;
