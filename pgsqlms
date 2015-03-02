@@ -1,0 +1,226 @@
+#!/bin/bash
+
+#   Resource Agent for managing foobar resources.
+#
+#   License:      PostgreSQL License (BSD Like)
+#   (c) 2012-2013 Jehan-Guillaume de Rorthais, Maël Rimbault
+
+# Initialization
+: ${OCF_FUNCTIONS_DIR=${OCF_ROOT}/lib/heartbeat}
+. ${OCF_FUNCTIONS_DIR}/ocf-shellfuncs
+
+# Default parameters
+OCF_RESKEY_system_user_default="postgres"
+OCF_RESKEY_bindir_default="/usr/bin"
+OCF_RESKEY_pgdata_default="/var/lib/pgsql/data"
+OCF_RESKEY_recovery_template_default="${OCF_RESKEY_pgdata_default}/recovery.conf.pcmk"
+
+: ${OCF_RESKEY_system_user=${OCF_RESKEY_system_user_default}}
+: ${OCF_RESKEY_bindir=${OCF_RESKEY_bindir_default}}
+: ${OCF_RESKEY_pgdata=${OCF_RESKEY_pgdata_default}}
+: ${OCF_RESKEY_recovery_template=${OCF_RESKEY_recovery_template_default}}
+
+
+function pgsql_validate_all() {
+    local rc
+    local PGVERSION
+
+    # FIXME
+    # http://www.linux-ha.org/doc/dev-guides/_testing_for_binaries_literal_have_binary_literal_and_literal_check_binary_literal.html
+
+    # check binaries
+    check_binary "${OCF_RESKEY_bindir}/pg_ctl"
+    check_binary "${OCF_RESKEY_bindir}/psql"
+    check_binary "${OCF_RESKEY_bindir}/pg_controldata"
+    check_binary "${HA_SBIN_DIR}/crm_master"
+    check_binary "sed"
+    check_binary "grep"
+
+    # check pgdata
+    if [ ! -d "${OCF_RESKEY_pgdata}" ] ; then
+        ocf_log error "PGDATA \"${OCF_RESKEY_pgdata}\" doesn't exist";
+        return $OCF_ERR_CONFIGURED
+    fi
+
+    # check pgdata
+    if [ ! -s "${OCF_RESKEY_pgdata}/PG_VERSION" ] ; then
+        ocf_log error "PG_VERSION does not exists in \"${OCF_RESKEY_pgdata}\"";
+        return $OCF_ERR_CONFIGURED
+    fi
+
+    # check system user
+    id -nu "${OCF_RESKEY_system_user}" > /dev/null 2>&1
+    rc=$?
+    if [ ! $rc ] ; then
+        ocf_log error "System user \"${OCF_RESKEY_system_user}\" doesn't exist";
+        return $OCF_ERR_CONFIGURED
+    fi
+
+    # require 9.3 minimum
+    PGVERSION="$(cat ${OCF_RESKEY_pgdata}/PG_VERSION)"
+    PGVERNUM=$(( ${PGVERSION%.*} * 10000 + ${PGVERSION#*.} * 100 ))
+    if [ $PGVERNUM -ge 90300 ] ; then
+        ocf_log error "PostgreSQL version $PGVERSION not supported. Require 9.3 and more.";
+        return $OCF_ERR_CONFIGURED
+    fi
+
+}
+
+ocf_meta_data() {
+    # FIXME: ajouter actions
+    cat <<EOF
+<?xml version="1.0"?>
+<!DOCTYPE resource-agent SYSTEM "ra-api-1.dtd">
+<resource-agent name="pgsqlsr">
+  <version>1.0</version>
+
+  <longdesc lang="en">
+    Resource script for PostgreSQL in replication. It manages PostgreSQL servers using streaming replication as an HA resource.
+  </longdesc>
+  <shortdesc lang="en">Manages PostgreSQL servers in replication</shortdesc>
+  <parameters>
+    <parameter name="startable" unique="0" required="0">
+      <longdesc lang="en">
+        Values for this parameter show which nodes the resource is startable on.
+        If not set, all nodes are allowed to run the resource.
+        When set to an hostname, it only allows this one node.
+        This is automatically done in case of failover, to avoid failback.
+      </longdesc>
+      <shortdesc lang="en">Nodes allowed to start the resource</shortdesc>
+      <content type="string" default="" />
+    </parameter>
+
+    <parameter name="system_user" unique="0" required="0">
+      <longdesc lang="en">
+        System user account used to run the PostgreSQL server
+      </longdesc>
+      <shortdesc lang="en">PostgreSQL system User</shortdesc>
+      <content type="string" default="${OCF_RESKEY_system_user_default}" />
+    </parameter>
+
+    <parameter name="bindir" unique="0" required="0">
+      <longdesc lang="en">
+        Path to the directory storing the PostgreSQL binaries. The agent uses pg_controldata and pg_ctl.
+      </longdesc>
+      <shortdesc lang="en">Path to the PostgreSQL binaries</shortdesc>
+      <content type="string" default="${OCF_RESKEY_bindir_default}" />
+    </parameter>
+
+    <parameter name="pgdata" unique="1" required="0">
+      <longdesc lang="en">
+        Path to the data directory, e.g. PGDATA
+      </longdesc>
+      <shortdesc lang="en">Path to the data directory</shortdesc>
+      <content type="string" default="${OCF_RESKEY_pgdata_default}" />
+    </parameter>
+
+    <parameter name="recovery_template" unique="1" required="0">
+      <longdesc lang="en">
+        Path to the recovery.conf template. This file is simply copied to $PGDATA
+        before starting the instance as slave
+      </longdesc>
+      <shortdesc lang="en">Path to the recovery.conf template.</shortdesc>
+      <content type="string" default="${OCF_RESKEY_recovery_template_default}" />
+    </parameter>
+
+  </parameters>
+  <actions>
+    <action name="start" timeout="120" />
+    <action name="stop" timeout="120" />
+    <action name="status" timeout="60" />
+    <action name="reload" timeout="120" />
+    <action name="promote" timeout="60" />
+    <action name="demote" timeout="60" />
+    <action name="monitor" depth="0" timeout="30" interval="30"/>
+    <action name="notify" timeout="60" />
+    <action name="meta-data" timeout="5" />
+    <action name="validate-all" timeout="5" />
+    <action name="methods" timeout="5" />
+  </actions>
+</resource-agent>
+EOF
+}
+
+ocf_methods() {
+    # FIXME: ajouter methodes
+    cat <<EOF
+        start
+        stop
+        status
+        reload
+        promote
+        demote
+        monitor
+        notify
+        methods
+        meta-data
+        validate-all
+EOF
+}
+
+# Start the PostgreSQL server
+pg_start() {
+
+}
+
+# Stop the PostgreSQL server
+pg_stop() {
+
+}
+
+pg_reload() {
+    # no action necessary, this action is just to inform pacemaker that
+    # modification of non-unique parameters can be applied without 
+    # restarting the resource
+    ocf_log info "$__OCF_ACTION - pg_reload : FIXME: put a useful message here plz."
+    return $OCF_SUCCESS
+}
+
+# Promote here
+pg_promote() {
+
+}
+
+# Demote here
+pg_demote() {
+
+}
+
+# Notify here
+pg_notify() {
+
+}
+
+# Actions
+#start   Start the resource      Return 0 on success and an appropriate error code otherwise. Must not report success until the resource is fully active.
+#stop    Stop the resource       Return 0 on success and an appropriate error code otherwise. Must not report success until the resource is fully stopped.
+#monitor         Check the resource's state      Exit 0 if the resource is running, 7 if it is stopped and anything else if it is failed.
+#NOTE: The monitor script should test the state of the resource on the local machine only.
+#meta-data       Describe the resource   Provide information about this resource as an XML snippet. Exit with 0.
+#NOTE: This is not performed as root.
+#validate-all    Verify the supplied parameters are correct      Exit with 0 if parameters are valid, 2 if not valid, 6 if resource is not configured.
+
+case $1 in
+    start) ;;
+    stop) ;;
+    reload) ;;
+    monitor) ;;
+    promote) ;;
+    demote) ;;
+    notify) ;;
+    meta-data)
+        ocf_meta_data
+        exit 0
+        ;;
+    methods)
+        ocf_methods
+        exit 0
+        ;;
+    validate-all)
+        pgsql_validate_all
+        exit $?
+        ;;
+    *)
+        exit $OCF_ERR_UNIMPLEMENTED
+        ;;
+esac
