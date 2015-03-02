@@ -13,11 +13,13 @@
 OCF_RESKEY_system_user_default="postgres"
 OCF_RESKEY_bindir_default="/usr/bin"
 OCF_RESKEY_pgdata_default="/var/lib/pgsql/data"
+OCF_RESKEY_pgport_default=5432
 OCF_RESKEY_recovery_template_default="${OCF_RESKEY_pgdata_default}/recovery.conf.pcmk"
 
 : ${OCF_RESKEY_system_user=${OCF_RESKEY_system_user_default}}
 : ${OCF_RESKEY_bindir=${OCF_RESKEY_bindir_default}}
 : ${OCF_RESKEY_pgdata=${OCF_RESKEY_pgdata_default}}
+: ${OCF_RESKEY_pgport=${OCF_RESKEY_pgport_default}}
 : ${OCF_RESKEY_service=${OCF_RESKEY_service_default}}
 : ${OCF_RESKEY_recovery_template=${OCF_RESKEY_recovery_template_default}}
 
@@ -115,6 +117,14 @@ ocf_meta_data() {
       <content type="string" default="${OCF_RESKEY_pgdata_default}" />
     </parameter>
 
+    <parameter name="pgport" unique="1" required="0">
+      <longdesc lang="en">
+        Port the instance is listening on.
+      </longdesc>
+      <shortdesc lang="en">Instance port</shortdesc>
+      <content type="string" default="${OCF_RESKEY_pgport_default}" />
+    </parameter>
+
     <parameter name="recovery_template" unique="1" required="0">
       <longdesc lang="en">
         Path to the recovery.conf template. This file is simply copied to $PGDATA
@@ -201,8 +211,46 @@ pg_promote() {
 
 # Monitor here
 pg_monitor() {
-    OCF_CHECK_LEVEL
+    local rc
+    local instance_state
+    local is_in_recovery
 
+    # Light check, service only
+    service "$OCF_RESKEY_service" status > /dev/null
+    rc=$?
+
+    # check if PostgreSQL is running or not
+    if [ $rc -eq 0 ]; then
+	ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is running."
+    elif [ $rc -eq 3 ]; then
+	ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is not running."
+	return $OCF_NOT_RUNNING
+    else
+	# PostgreSQL state is unknown
+	ocf_log error "$__OCF_ACTION - pg_monitor : status of instance $OCF_RESOURCE_INSTANCE is unknown."
+	return $OCF_ERR_GENERIC
+    fi
+
+    # At this point, instance must be running
+
+    # Check if instance is Primary of Secondary
+    is_in_recovery=$(runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/psql -AtX -p "${OCF_RESKEY_pgport}" -c 'SELECT pg_is_in_recovery()'")
+    if [ $? -ne 0 ]; then
+        # FIXME try to check which state the instance was
+	ocf_log error "$__OCF_ACTION - pg_monitor : could not check if instance $OCF_RESOURCE_INSTANCE is Primary or Secondary."
+        return $OCF_ERR_GENERIC
+    fi
+
+    if [ "$is_in_recovery" = "t" ]; then
+	ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is running as Primary."
+        return $OCF_SUCCESS
+    elif [ "$is_in_recovery" = "f" ]; then
+	ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is running as Secondary."
+        return $OCF_RUNNING_MASTER
+    fi
+
+    ocf_log error "$__OCF_ACTION - pg_monitor : unexpected result when checking instance $OCF_RESOURCE_INSTANCE status."
+    return $OCF_ERR_GENERIC
 }
 
 # Demote here
