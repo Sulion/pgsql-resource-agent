@@ -18,6 +18,7 @@ OCF_RESKEY_recovery_template_default="${OCF_RESKEY_pgdata_default}/recovery.conf
 : ${OCF_RESKEY_system_user=${OCF_RESKEY_system_user_default}}
 : ${OCF_RESKEY_bindir=${OCF_RESKEY_bindir_default}}
 : ${OCF_RESKEY_pgdata=${OCF_RESKEY_pgdata_default}}
+: ${OCF_RESKEY_service=${OCF_RESKEY_service_default}}
 : ${OCF_RESKEY_recovery_template=${OCF_RESKEY_recovery_template_default}}
 
 
@@ -160,7 +161,24 @@ EOF
 
 # Start the PostgreSQL server
 pg_start() {
+    local rc
 
+    service "${OCF_RESKEY_service}" start
+    rc=$?
+
+    if test $rc -eq 0; then
+        # wait for the start to finish
+        OCF_CHECK_LEVEL=10
+        while ! pg_monitor
+        do
+            sleep 1
+        done
+        ocf_log info "$__OCF_ACTION - pg_start : instance $OCF_RESOURCE_INSTANCE started."
+        return $OCF_SUCCESS
+    fi
+
+    ocf_log error "$__OCF_ACTION - pg_start : instance $OCF_RESOURCE_INSTANCE failed to start."
+    return $OCF_ERR_GENERIC
 }
 
 # Stop the PostgreSQL server
@@ -178,6 +196,12 @@ pg_reload() {
 
 # Promote here
 pg_promote() {
+
+}
+
+# Monitor here
+pg_monitor() {
+    OCF_CHECK_LEVEL
 
 }
 
