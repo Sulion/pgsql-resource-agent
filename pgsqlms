@@ -173,21 +173,45 @@ EOF
 pg_start() {
     local rc
 
+    pg_monitor
+    rc=$?
+
+    # instance must be running as slave or being stopped
+    # anything else is an error
+    if [ $rc -eq $OCF_SUCCESS ]; then
+        return $OCF_SUCCESS
+    elif [ $rc -ne $OCF_NOT_RUNNING ] ; then
+        return $OCF_ERR_GENERIC
+    fi
+
+    # From here, the instance is NOT running for sure
+
     service "${OCF_RESKEY_service}" start
     rc=$?
 
-    if test $rc -eq 0; then
+    # wait for the instance to be started
+    if [ $rc -eq 0 ]; then
         # wait for the start to finish
-        OCF_CHECK_LEVEL=10
-        while ! pg_monitor
+        pg_monitor
+        rc=$?
+        while [ $rc -eq $OCF_NOT_RUNNING ]
         do
             sleep 1
+            pg_monitor
+            rc=$?
         done
-        ocf_log info "$__OCF_ACTION - pg_start : instance $OCF_RESOURCE_INSTANCE started."
-        return $OCF_SUCCESS
+
+        if [ $rc -eq $OCF_SUCCESS ]; then
+            ocf_log info  "$__OCF_ACTION - pg_start : instance OCF_RESOURCE_INSTANCE is running."
+        else
+            ocf_log error "$__OCF_ACTION - pg_start : instance OCF_RESOURCE_INSTANCE is not running as a slave (returned $rc)."
+        fi
+
+        return $rc
     fi
 
     ocf_log error "$__OCF_ACTION - pg_start : instance $OCF_RESOURCE_INSTANCE failed to start."
+
     return $OCF_ERR_GENERIC
 }
 
@@ -212,7 +236,6 @@ pg_promote() {
 # Monitor here
 pg_monitor() {
     local rc
-    local instance_state
     local is_in_recovery
 
     # Light check, service only
