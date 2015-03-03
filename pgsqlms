@@ -224,6 +224,49 @@ pg_start() {
 
 # Stop the PostgreSQL instance
 pg_stop() {
+    local rc
+
+    # instance must be running as slave or master or being stopped
+    # anything else is an error
+    pg_monitor
+    rc=$?
+    if [ $rc -eq $OCF_NOT_RUNNING ] ; then
+        ocf_log info "$__OCF_ACTION - pg_stop : instance $OCF_RESOURCE_INSTANCE already stopped."
+        return $OCF_SUCCESS
+    elif [ $rc -ne $OCF_SUCCESS -a $rc -ne $OCF_RUNNING_MASTER ]; then
+        ocf_log warn "$__OCF_ACTION - pg_stop : unexpected state for instance $OCF_RESOURCE_INSTANCE (returned $rc)."
+    fi
+
+    #
+    # From here, the instance is running for sure
+    #
+
+    # try to quit with proper shutdown
+    #FIXME we should add a timeout in pg_ctl call, and try an immediate stop 
+    # after that
+    runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/pg_ctl -D ${OCF_RESKEY_pgdata} -w -m fast stop"
+    rc=$?
+
+    # wait for the stop to finish
+    if [ $rc -eq 0 ]; then
+        pg_monitor
+        rc=$?
+        while [ $rc -ne $OCF_NOT_RUNNING ]
+        do
+        #FIXME if proper shutdown does not cut it we need to use immediate stop
+        # after some time, and avoid FAILED pacemaker state, which would 
+        # trigger fencing
+            sleep 1
+            pg_monitor
+            rc=$?
+        done
+
+        ocf_log info  "$__OCF_ACTION - pg_stop : instance $OCF_RESOURCE_INSTANCE stopped."
+        return $rc
+    fi
+
+    ocf_log error "$__OCF_ACTION - pg_stop : instance $OCF_RESOURCE_INSTANCE failed to stop."
+    return $OCF_ERR_GENERIC
 
 }
 
