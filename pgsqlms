@@ -195,7 +195,7 @@ pg_start() {
         return $OCF_ERR_GENERIC
     fi
 
-    su -l -c "${OCF_RESKEY_bindir}/pg_ctl -D ${OCF_RESKEY_pgdata} -w start" ${OCF_RESKEY_system_user}
+    runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/pg_ctl -D ${OCF_RESKEY_pgdata} -w start"
     rc=$?
 
     # wait for the start to finish
