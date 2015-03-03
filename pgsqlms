@@ -170,6 +170,7 @@ EOF
 # Start the PostgreSQL instance as a *slave*
 pg_start() {
     local rc
+    OCF_CHECK_LEVEL=20
 
     # instance must be running as slave or being stopped
     # anything else is an error
@@ -225,6 +226,7 @@ pg_start() {
 # Stop the PostgreSQL instance
 pg_stop() {
     local rc
+    OCF_CHECK_LEVEL=20
 
     # instance must be running as slave or master or being stopped
     # anything else is an error
@@ -278,27 +280,70 @@ pg_promote() {
 # Monitor the PostgreSQL instance
 pg_monitor() {
     local rc
+    local pgctl_rc
+    local pgisready_rc
+    local psql_rc
     local is_in_recovery
 
-#FIXME service status command is too light for several cases
-#      ie pg_start, pg_stop, because it only checks pid file
-#      (at least on CentOS)
-#      we should add other monitor levels with OCF_CHECK_LEVEL
-
-    # Light check, service only
-    service "$OCF_RESKEY_service" status > /dev/null
-    rc=$?
+    # Light check, pg_ctl
+    runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/pg_ctl -D ${OCF_RESKEY_pgdata} status"
+    pgctl_rc=$?
 
     # check if PostgreSQL is running or not
-    if [ $rc -eq 0 ]; then
-        ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is running."
-    elif [ $rc -eq 3 ]; then
-        ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is not running."
-        return $OCF_NOT_RUNNING
+    if [ $pgctl_rc -eq 0 ]; then
+        ocf_log debug "$__OCF_ACTION - pg_monitor(pg_ctl) : instance $OCF_RESOURCE_INSTANCE is running."
+    elif [ $pgctl_rc -eq 3 ]; then
+        ocf_log debug "$__OCF_ACTION - pg_monitor(pg_ctl) : instance $OCF_RESOURCE_INSTANCE is not running."
     else
         # PostgreSQL state is unknown
-        ocf_log error "$__OCF_ACTION - pg_monitor : status of instance $OCF_RESOURCE_INSTANCE is unknown."
+        ocf_log error "$__OCF_ACTION - pg_monitor(pg_ctl) : status of instance $OCF_RESOURCE_INSTANCE is unknown."
         return $OCF_ERR_GENERIC
+    fi
+
+    # Medium check, pg_isready
+    if [ $OCF_CHECK_LEVEL -ge 10 ]; then
+        runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/pg_isready -p ${OCF_RESKEY_pgport}"
+        pgisready_rc=$?
+    
+        # check if PostgreSQL is running or not
+        if [ $pgisready_rc -eq 0 ]; then
+            if [ $pgctl_rc -ne 0 ]; then
+                ocf_log warn "$__OCF_ACTION - pg_monitor(pg_isready) : inconsistent result between pg_ctl and pg_isready for instance $OCF_RESOURCE_INSTANCE !"
+            fi
+            ocf_log debug "$__OCF_ACTION - pg_monitor(pg_isready) : instance $OCF_RESOURCE_INSTANCE is running."
+        elif [ $pgisready_rc -eq 2 ]; then
+            ocf_log debug "$__OCF_ACTION - pg_monitor(pg_isready) : instance $OCF_RESOURCE_INSTANCE is not running."
+        else
+            # PostgreSQL state is unknown
+            ocf_log error "$__OCF_ACTION - pg_monitor(pg_isready) : status of instance $OCF_RESOURCE_INSTANCE is unknown."
+            return $OCF_ERR_GENERIC
+        fi
+    fi
+
+    # Hard check, psql
+    if [ $OCF_CHECK_LEVEL -ge 20 ]; then
+        runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/psql -w -p ${OCF_RESKEY_pgport} -c 'SELECT 1' > /dev/null"
+        psql_rc=$?
+    
+        # check if PostgreSQL is running or not
+        if [ $psql_rc -eq 0 ]; then
+            if [ $pgctl_rc -ne 0 ]; then
+                ocf_log warn "$__OCF_ACTION - pg_monitor(psql) : inconsistent result between pg_ctl and psql for instance $OCF_RESOURCE_INSTANCE !"
+            fi
+            ocf_log debug "$__OCF_ACTION - pg_monitor(psql) : instance $OCF_RESOURCE_INSTANCE is running."
+        elif [ $psql_rc -eq 2 ]; then
+            ocf_log debug "$__OCF_ACTION - pg_monitor(psql) : instance $OCF_RESOURCE_INSTANCE is not running."
+        else
+            # PostgreSQL state is unknown
+            ocf_log error "$__OCF_ACTION - pg_monitor(psql) : status of instance $OCF_RESOURCE_INSTANCE is unknown."
+            return $OCF_ERR_GENERIC
+        fi
+    fi
+
+    # Return if instance is stopped
+    if [ $pgctl_rc -ne 0 -o $pgisready_rc -ne 0 -o $psql_rc -ne 0 ]; then
+        ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is not running."
+        return $OCF_NOT_RUNNING
     fi
 
     #
