@@ -71,7 +71,6 @@ function pgsql_validate_all() {
 }
 
 ocf_meta_data() {
-    # FIXME: ajouter actions
     cat <<EOF
 <?xml version="1.0"?>
 <!DOCTYPE resource-agent SYSTEM "ra-api-1.dtd">
@@ -140,7 +139,6 @@ ocf_meta_data() {
     <action name="start" timeout="120" />
     <action name="stop" timeout="120" />
     <action name="status" timeout="60" />
-    <action name="reload" timeout="120" />
     <action name="promote" timeout="60" />
     <action name="demote" timeout="60" />
     <action name="monitor" depth="0" timeout="30" interval="30"/>
@@ -159,7 +157,6 @@ ocf_methods() {
         start
         stop
         status
-        reload
         promote
         demote
         monitor
@@ -170,24 +167,25 @@ ocf_methods() {
 EOF
 }
 
-# Start the PostgreSQL server
+# Start the PostgreSQL instance as a *slave*
 pg_start() {
     local rc
 
-    pg_monitor
-    rc=$?
-
     # instance must be running as slave or being stopped
     # anything else is an error
+    pg_monitor
+    rc=$?
     if [ $rc -eq $OCF_SUCCESS ]; then
         return $OCF_SUCCESS
     elif [ $rc -ne $OCF_NOT_RUNNING ] ; then
         return $OCF_ERR_GENERIC
     fi
 
+    #
     # From here, the instance is NOT running for sure
+    #
 
-    # create the recovery.conf file
+    # create the recovery.conf file to start as a slave
     cp -f "${OCF_RESKEY_recovery_template}" "${OCF_RESKEY_pgdata}/recovery.conf" &> /dev/null
     rc=$?
 
@@ -198,9 +196,8 @@ pg_start() {
     service "${OCF_RESKEY_service}" start
     rc=$?
 
-    # wait for the instance to be started
+    # wait for the start to finish
     if [ $rc -eq 0 ]; then
-        # wait for the start to finish
         pg_monitor
         rc=$?
         while [ $rc -eq $OCF_NOT_RUNNING ]
@@ -224,25 +221,17 @@ pg_start() {
     return $OCF_ERR_GENERIC
 }
 
-# Stop the PostgreSQL server
+# Stop the PostgreSQL instance
 pg_stop() {
 
 }
 
-pg_reload() {
-    # no action necessary, this action is just to inform pacemaker that
-    # modification of non-unique parameters can be applied without 
-    # restarting the resource
-    ocf_log info "$__OCF_ACTION - pg_reload : FIXME: put a useful message here plz."
-    return $OCF_SUCCESS
-}
-
-# Promote here
+# Promote the standby instance to production 
 pg_promote() {
 
 }
 
-# Monitor here
+# Monitor the PostgreSQL instance
 pg_monitor() {
     local rc
     local is_in_recovery
@@ -263,7 +252,9 @@ pg_monitor() {
         return $OCF_ERR_GENERIC
     fi
 
+    #
     # At this point, instance must be running
+    #
 
     # Check if instance is Primary of Secondary
     is_in_recovery=$(runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/psql -AtX -p "${OCF_RESKEY_pgport}" -c 'SELECT pg_is_in_recovery()'")
@@ -285,12 +276,12 @@ pg_monitor() {
     return $OCF_ERR_GENERIC
 }
 
-# Demote here
+# Demote the PostgreSQL from production to standby
 pg_demote() {
 
 }
 
-# Notify here
+# Called on pre and post actions.
 pg_notify() {
 
 }
@@ -310,7 +301,6 @@ case $1 in
         pg_start
         exit $?;;
     stop) ;;
-    reload) ;;
     monitor)
         pg_monitor
         exit $?;;
