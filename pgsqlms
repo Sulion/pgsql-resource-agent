@@ -177,10 +177,10 @@ pg_start() {
     pg_monitor
     rc=$?
     if [ $rc -eq $OCF_SUCCESS ]; then
-        ocf_log info "$__OCF_ACTION - pg_start : instance $OCF_RESOURCE_INSTANCE already started."
+        ocf_log info "$__OCF_ACTION - pg_start: instance $OCF_RESOURCE_INSTANCE already started."
         return $OCF_SUCCESS
     elif [ $rc -ne $OCF_NOT_RUNNING ] ; then
-        ocf_log error "$__OCF_ACTION - pg_start : unexpected state for instance $OCF_RESOURCE_INSTANCE (returned $rc)."
+        ocf_log error "$__OCF_ACTION - pg_start: unexpected state for instance $OCF_RESOURCE_INSTANCE (returned $rc)."
         return $OCF_ERR_GENERIC
     fi
 
@@ -211,15 +211,15 @@ pg_start() {
         done
 
         if [ $rc -eq $OCF_SUCCESS ]; then
-            ocf_log info  "$__OCF_ACTION - pg_start : instance $OCF_RESOURCE_INSTANCE started."
+            ocf_log info  "$__OCF_ACTION - pg_start: instance $OCF_RESOURCE_INSTANCE started."
         else
-            ocf_log error "$__OCF_ACTION - pg_start : instance $OCF_RESOURCE_INSTANCE is not running as a slave (returned $rc)."
+            ocf_log error "$__OCF_ACTION - pg_start: instance $OCF_RESOURCE_INSTANCE is not running as a slave (returned $rc)."
         fi
 
         return $rc
     fi
 
-    ocf_log error "$__OCF_ACTION - pg_start : instance $OCF_RESOURCE_INSTANCE failed to start."
+    ocf_log error "$__OCF_ACTION - pg_start: instance $OCF_RESOURCE_INSTANCE failed to start."
     return $OCF_ERR_GENERIC
 }
 
@@ -233,10 +233,10 @@ pg_stop() {
     pg_monitor
     rc=$?
     if [ $rc -eq $OCF_NOT_RUNNING ] ; then
-        ocf_log info "$__OCF_ACTION - pg_stop : instance $OCF_RESOURCE_INSTANCE already stopped."
+        ocf_log info "$__OCF_ACTION - pg_stop: instance $OCF_RESOURCE_INSTANCE already stopped."
         return $OCF_SUCCESS
     elif [ $rc -ne $OCF_SUCCESS -a $rc -ne $OCF_RUNNING_MASTER ]; then
-        ocf_log warn "$__OCF_ACTION - pg_stop : unexpected state for instance $OCF_RESOURCE_INSTANCE (returned $rc)."
+        ocf_log warn "$__OCF_ACTION - pg_stop: unexpected state for instance $OCF_RESOURCE_INSTANCE (returned $rc)."
     fi
 
     #
@@ -263,11 +263,11 @@ pg_stop() {
             rc=$?
         done
 
-        ocf_log info  "$__OCF_ACTION - pg_stop : instance $OCF_RESOURCE_INSTANCE stopped."
+        ocf_log info  "$__OCF_ACTION - pg_stop: instance $OCF_RESOURCE_INSTANCE stopped."
         return $rc
     fi
 
-    ocf_log error "$__OCF_ACTION - pg_stop : instance $OCF_RESOURCE_INSTANCE failed to stop."
+    ocf_log error "$__OCF_ACTION - pg_stop: instance $OCF_RESOURCE_INSTANCE failed to stop."
     return $OCF_ERR_GENERIC
 
 }
@@ -291,12 +291,12 @@ pg_monitor() {
 
     # check if PostgreSQL is running or not
     if [ $pgctl_rc -eq 0 ]; then
-        ocf_log debug "$__OCF_ACTION - pg_monitor(pg_ctl) : instance $OCF_RESOURCE_INSTANCE is running."
+        ocf_log debug "$__OCF_ACTION - pg_monitor(pg_ctl): instance $OCF_RESOURCE_INSTANCE is running."
     elif [ $pgctl_rc -eq 3 ]; then
-        ocf_log debug "$__OCF_ACTION - pg_monitor(pg_ctl) : instance $OCF_RESOURCE_INSTANCE is not running."
+        ocf_log debug "$__OCF_ACTION - pg_monitor(pg_ctl): instance $OCF_RESOURCE_INSTANCE is not running."
     else
         # PostgreSQL state is unknown
-        ocf_log error "$__OCF_ACTION - pg_monitor(pg_ctl) : status of instance $OCF_RESOURCE_INSTANCE is unknown."
+        ocf_log error "$__OCF_ACTION - pg_monitor(pg_ctl): status of instance $OCF_RESOURCE_INSTANCE is unknown."
         return $OCF_ERR_GENERIC
     fi
 
@@ -308,14 +308,14 @@ pg_monitor() {
         # check if PostgreSQL is running or not
         if [ $pgisready_rc -eq 0 ]; then
             if [ $pgctl_rc -ne 0 ]; then
-                ocf_log warn "$__OCF_ACTION - pg_monitor(pg_isready) : inconsistent result between pg_ctl and pg_isready for instance $OCF_RESOURCE_INSTANCE !"
+                ocf_log warn "$__OCF_ACTION - pg_monitor(pg_isready): inconsistent result between pg_ctl and pg_isready for instance $OCF_RESOURCE_INSTANCE !"
             fi
-            ocf_log debug "$__OCF_ACTION - pg_monitor(pg_isready) : instance $OCF_RESOURCE_INSTANCE is running."
+            ocf_log debug "$__OCF_ACTION - pg_monitor(pg_isready): instance $OCF_RESOURCE_INSTANCE is running."
         elif [ $pgisready_rc -eq 2 ]; then
-            ocf_log debug "$__OCF_ACTION - pg_monitor(pg_isready) : instance $OCF_RESOURCE_INSTANCE is not running."
+            ocf_log debug "$__OCF_ACTION - pg_monitor(pg_isready): instance $OCF_RESOURCE_INSTANCE is not running."
         else
             # PostgreSQL state is unknown
-            ocf_log error "$__OCF_ACTION - pg_monitor(pg_isready) : status of instance $OCF_RESOURCE_INSTANCE is unknown."
+            ocf_log error "$__OCF_ACTION - pg_monitor(pg_isready): status of instance $OCF_RESOURCE_INSTANCE is unknown."
             return $OCF_ERR_GENERIC
         fi
     fi
@@ -328,21 +328,21 @@ pg_monitor() {
         # check if PostgreSQL is running or not
         if [ $psql_rc -eq 0 ]; then
             if [ $pgctl_rc -ne 0 ]; then
-                ocf_log warn "$__OCF_ACTION - pg_monitor(psql) : inconsistent result between pg_ctl and psql for instance $OCF_RESOURCE_INSTANCE !"
+                ocf_log warn "$__OCF_ACTION - pg_monitor(psql): inconsistent result between pg_ctl and psql for instance $OCF_RESOURCE_INSTANCE !"
             fi
-            ocf_log debug "$__OCF_ACTION - pg_monitor(psql) : instance $OCF_RESOURCE_INSTANCE is running."
+            ocf_log debug "$__OCF_ACTION - pg_monitor(psql): instance $OCF_RESOURCE_INSTANCE is running."
         elif [ $psql_rc -eq 2 ]; then
-            ocf_log debug "$__OCF_ACTION - pg_monitor(psql) : instance $OCF_RESOURCE_INSTANCE is not running."
+            ocf_log debug "$__OCF_ACTION - pg_monitor(psql): instance $OCF_RESOURCE_INSTANCE is not running."
         else
             # PostgreSQL state is unknown
-            ocf_log error "$__OCF_ACTION - pg_monitor(psql) : status of instance $OCF_RESOURCE_INSTANCE is unknown."
+            ocf_log error "$__OCF_ACTION - pg_monitor(psql): status of instance $OCF_RESOURCE_INSTANCE is unknown."
             return $OCF_ERR_GENERIC
         fi
     fi
 
     # Return if instance is stopped
     if [ $pgctl_rc -ne 0 -o $pgisready_rc -ne 0 -o $psql_rc -ne 0 ]; then
-        ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is not running."
+        ocf_log debug "$__OCF_ACTION - pg_monitor: instance $OCF_RESOURCE_INSTANCE is not running."
         return $OCF_NOT_RUNNING
     fi
 
@@ -354,19 +354,19 @@ pg_monitor() {
     is_in_recovery=$(runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/psql -AtX -p "${OCF_RESKEY_pgport}" -c 'SELECT pg_is_in_recovery()'")
     if [ $? -ne 0 ]; then
         # FIXME try to check which state the instance was
-        ocf_log error "$__OCF_ACTION - pg_monitor : could not check if instance $OCF_RESOURCE_INSTANCE is Primary or Secondary."
+        ocf_log error "$__OCF_ACTION - pg_monitor: could not check if instance $OCF_RESOURCE_INSTANCE is Primary or Secondary."
         return $OCF_ERR_GENERIC
     fi
 
     if [ "$is_in_recovery" = "t" ]; then
-        ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is running as Primary."
+        ocf_log debug "$__OCF_ACTION - pg_monitor: instance $OCF_RESOURCE_INSTANCE is running as Primary."
         return $OCF_SUCCESS
     elif [ "$is_in_recovery" = "f" ]; then
-        ocf_log debug "$__OCF_ACTION - pg_monitor : instance $OCF_RESOURCE_INSTANCE is running as Secondary."
+        ocf_log debug "$__OCF_ACTION - pg_monitor: instance $OCF_RESOURCE_INSTANCE is running as Secondary."
         return $OCF_RUNNING_MASTER
     fi
 
-    ocf_log error "$__OCF_ACTION - pg_monitor : unexpected result when checking instance $OCF_RESOURCE_INSTANCE status."
+    ocf_log error "$__OCF_ACTION - pg_monitor: unexpected result when checking instance $OCF_RESOURCE_INSTANCE status."
     return $OCF_ERR_GENERIC
 }
 
