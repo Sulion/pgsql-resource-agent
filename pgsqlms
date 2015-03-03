@@ -236,6 +236,11 @@ pg_monitor() {
     local rc
     local is_in_recovery
 
+#FIXME service status command is too light for several cases
+#      ie pg_start, pg_stop, because it only checks pid file
+#      (at least on CentOS)
+#      we should add other monitor levels with OCF_CHECK_LEVEL
+
     # Light check, service only
     service "$OCF_RESKEY_service" status > /dev/null
     rc=$?
