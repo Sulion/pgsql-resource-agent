@@ -140,7 +140,7 @@ ocf_meta_data() {
     <action name="stop" timeout="120" />
     <action name="status" timeout="60" />
     <action name="promote" timeout="60" />
-    <action name="demote" timeout="60" />
+    <action name="demote" timeout="120" />
     <action name="monitor" depth="0" timeout="30" interval="30"/>
     <action name="notify" timeout="60" />
     <action name="meta-data" timeout="5" />
@@ -188,7 +188,13 @@ pg_start() {
     # From here, the instance is NOT running for sure
     #
 
-    # create the recovery.conf file to start as a slave
+    # create the recovery.conf file to start as a standby
+    # NOTE: the recovery.conf is supposed to be set up so the standby can
+    # connect to the instance in production. As there is no instance in
+    # production on start, standbys will bail about failing to connect to
+    # the primary.
+    # As we can not reload a recovery.conf file on a standby without restarting
+    # it, we will leave with this.
     cp -f "${OCF_RESKEY_recovery_template}" "${OCF_RESKEY_pgdata}/recovery.conf" &> /dev/null
     rc=$?
 
@@ -371,8 +377,74 @@ pg_monitor() {
 }
 
 # Demote the PostgreSQL from production to standby
+# To demote a PostgreSQL instance, we must:
+#   * stop it gracefully
+#   * create recovery.conf with standby_mode = on
+#   * start it
 pg_demote() {
+    local rc
 
+    pg_monitor
+    rc=$?
+    case "$rc" in
+        "$OCF_RUNNING_MASTER") # Running as master. Normal, expected behavior.
+            ocf_log debug "$__OCF_ACTION - pg_demote: currently running as a primary."
+            ;;
+        "$OCF_SUCCESS") # Alread running as slave. Nothing to do.
+            ocf_log debug "$__OCF_ACTION - pg_demote: currently running as a standby."
+            return $OCF_SUCCESS
+            ;;
+        "$OCF_NOT_RUNNING") # Currently not running. This state is unexpected.
+            ocf_log error "$__OCF_ACTION - pg_demote: currently not running."
+            return $OCF_ERR_GENERIC
+            ;;
+        *) # Failed resource. Let the cluster manager recover.
+            ocf_log error "$__OCF_ACTION - pg_demote: unexpected error, cannot demote."
+            return $rc
+            ;;
+    esac
+
+    # WARNING: the instance **MUST** be stopped gracefully. Do **not** use
+    # pg_stop() or service or systemctl here as these commands might force-stop
+    # the PostgreSQL instance using immediate after some timeout and return
+    # success, which is misleading.
+    runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/pg_ctl -D ${OCF_RESKEY_pgdata} -w stop"
+    rc=$?
+
+    # no need to wait for stop to complete, this is handled in pg_ctl using -w
+    if [ $? -ne 0 ]; then
+        ocf_log error "$__OCF_ACTION - pg_demote: failed to stop $OCF_RESOURCE_INSTANCE using pg_ctl (returned $rc)."
+        return $OCF_ERR_GENERIC
+    fi
+
+    # Double check that the instance is stopped correctly
+    # FIXME: Ask for a higher OCF_CHECK_LEVEL ?
+    pg_monitor
+    rc=$?
+    if [ $? -ne $OCF_NOT_RUNNING ]; then
+        ocf_log error "$__OCF_ACTION - pg_demote: unexpected $OCF_RESOURCE_INSTANCE state: monitor status ($rc) disagree with pg_ctl return code."
+        return $OCF_ERR_GENERIC
+    fi
+
+    #
+    # At this point, the instance must be stopped gracefully
+    #
+
+    # Note: We do not need to handle the recovery.conf file here as pg_start()
+    # deal with that itself. Equally, no need to wait for the start to complete
+    # here, handled in pg_start().
+    pg_start
+    rc=$?
+    if [ $? -eq $OCF_SUCCESS ]; then
+        ocf_log info "$__OCF_ACTION - pg_demote: $OCF_RESOURCE_INSTANCE started as a standby."
+        return $OCF_SUCCESS
+    fi
+
+    # NOTE: no need to double check the instance state as pg_start already use
+    # pg_monitor to check the state before returning
+
+    ocf_log error "$__OCF_ACTION - pg_demote: starting $OCF_RESOURCE_INSTANCE as a standby failed (returned $rc)."
+    return $OCF_ERR_GENERIC
 }
 
 # Called on pre and post actions.
