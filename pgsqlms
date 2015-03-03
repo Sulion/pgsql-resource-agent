@@ -187,7 +187,13 @@ pg_start() {
     # From here, the instance is NOT running for sure
     #
 
-    # create the recovery.conf file to start as a slave
+    # create the recovery.conf file to start as a standby
+    # NOTE: the recovery.conf is supposed to be set up so the standby can
+    # connect to the instance in production. As there is no instance in
+    # production on start, standbys will bail about failing to connect to
+    # the primary.
+    # As we can not reload a recovery.conf file on a standby without restarting
+    # it, we will leave with this.
     cp -f "${OCF_RESKEY_recovery_template}" "${OCF_RESKEY_pgdata}/recovery.conf" &> /dev/null
     rc=$?
 
