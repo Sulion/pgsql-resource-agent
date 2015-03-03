@@ -176,8 +176,10 @@ pg_start() {
     pg_monitor
     rc=$?
     if [ $rc -eq $OCF_SUCCESS ]; then
+        ocf_log info "$__OCF_ACTION - pg_start : instance $OCF_RESOURCE_INSTANCE already started."
         return $OCF_SUCCESS
     elif [ $rc -ne $OCF_NOT_RUNNING ] ; then
+        ocf_log error "$__OCF_ACTION - pg_start : unexpected state for instance $OCF_RESOURCE_INSTANCE (returned $rc)."
         return $OCF_ERR_GENERIC
     fi
 
@@ -193,7 +195,7 @@ pg_start() {
         return $OCF_ERR_GENERIC
     fi
 
-    service "${OCF_RESKEY_service}" start
+    su -l -c "${OCF_RESKEY_bindir}/pg_ctl -D ${OCF_RESKEY_pgdata} -w start" ${OCF_RESKEY_system_user}
     rc=$?
 
     # wait for the start to finish
@@ -208,16 +210,15 @@ pg_start() {
         done
 
         if [ $rc -eq $OCF_SUCCESS ]; then
-            ocf_log info  "$__OCF_ACTION - pg_start : instance OCF_RESOURCE_INSTANCE is running."
+            ocf_log info  "$__OCF_ACTION - pg_start : instance $OCF_RESOURCE_INSTANCE started."
         else
-            ocf_log error "$__OCF_ACTION - pg_start : instance OCF_RESOURCE_INSTANCE is not running as a slave (returned $rc)."
+            ocf_log error "$__OCF_ACTION - pg_start : instance $OCF_RESOURCE_INSTANCE is not running as a slave (returned $rc)."
         fi
 
         return $rc
     fi
 
     ocf_log error "$__OCF_ACTION - pg_start : instance $OCF_RESOURCE_INSTANCE failed to start."
-
     return $OCF_ERR_GENERIC
 }
 
