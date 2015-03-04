@@ -167,20 +167,114 @@ ocf_methods() {
 EOF
 }
 
+# Check if instance is listening on the port
+#
+_pg_isready() {
+    local rc
+
+    runuser "${OCF_RESKEY_system_user}" -l -c "${OCF_RESKEY_bindir}/pg_isready -p ${OCF_RESKEY_pgport}"
+    rc=$?
+
+    # possible error codes:
+    #   1: ping rejected (usually when instance is in startup, recovery or 
+    #      a shutdown is in progress)
+    #   2: no response, usually means the instance is down
+    #   3: no attempt, probably a syntax error, should not happen
+    return $rc
+    
+}
+
+# Check the postmaster.pid file and the postmaster process
+#
+_pg_ctl_status() {
+    local rc
+
+    runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/pg_ctl -D ${OCF_RESKEY_pgdata} status"
+    rc=$?
+
+    # possible error codes:
+    #   3: postmaster.pid file does not exists OR it does but the process 
+    #      with the pid found in the file is not alive
+    return $rc
+
+}
+
+# Use pg_controldata to check if the state of the PostgreSQL server. This 
+# function return codes depending on this state, so we can find wether the 
+# instance is Primary or Secondary, or use it to detect any inconsistency
+# that could indicate the instance has crashed.
+#
+_controldata() {
+    local inststate
+
+    inststate=$(su -l -c "LANG=C ${OCF_RESKEY_bindir}/pg_controldata ${OCF_RESKEY_pgdata} | \
+        sed -rn 's/^Database cluster state:\s+(.*)/\1/p'" \
+        ${OCF_RESKEY_system_user})
+
+    while [ -n "$inststate" ]; do
+        case $inststate in
+            "in production")
+                # Instance should be running as a Primary.
+                ocf_log debug "$__OCF_ACTION - _controldata: instance $OCF_RESOURCE_INSTANCE state is \"$inststate\"."
+                return $OCF_RUNNING_MASTER
+                ;;
+            "in archive recovery")
+                # Instance should be running as a Secondary.
+                # This state includes Warm Standby (rejects connections
+                # attempts, including pg_isready)
+                ocf_log debug "$__OCF_ACTION - _controldata: instance $OCF_RESOURCE_INSTANCE state is \"$inststate\"."
+                return $OCF_SUCCESS
+                ;;
+            "shut down"|"shut down in recovery")
+                # The instance should be stopped.
+                # We don't care if it was Primary or Secondary before, because
+                # we always start instances as Secondaries, and then promotes
+                # if necessary.
+                ocf_log debug "$__OCF_ACTION - _controldata: instance $OCF_RESOURCE_INSTANCE state is \"$inststate\"."
+                return $OCF_NOT_RUNNING
+                ;;
+            *)
+                # The state is "in crash recovery", "starting up" or 
+                # "shutting down".
+                # This state should be transitional, so we wait and loop to 
+                # check if it changes.
+                ocf_log debug "$__OCF_ACTION - _controldata: instance $OCF_RESOURCE_INSTANCE state is \"$inststate\": waiting."
+                sleep 1
+                inststate=$(su -l -c "LANG=C ${OCF_RESKEY_bindir}/pg_controldata ${OCF_RESKEY_pgdata} | \
+                    sed -rn 's/^Database cluster state:\s+(.*)/\1/p'" \
+                    ${OCF_RESKEY_system_user})
+                ;;
+        esac
+    done
+
+    # If we arrive at this point, something went wrong with pg_controldata
+    #FIXME better to raise a hard error at this point, like OCF_ERR_CONFIGURED ?
+    ocf_log error "$__OCF_ACTION - _controldata: unable get instance $OCF_RESOURCE_INSTANCE state using pg_controldata."
+    ocf_log debug "$__OCF_ACTION - _controldata: instance $OCF_RESOURCE_INSTANCE state is \"$instance_state\"."
+    return $OCF_ERR_GENERIC
+
+}
+
+# Run a query using psql
+#
 _query() {
     local rc
     local ANS
     local QUERY="$1"
 
-    ANS=$(runuser -l "${OCF_RESKEY_system_user}" -c "
-psql -XAt --set='ON_ERROR_STOP=1' postgres <<EOQ
+    ANS=$(runuser "${OCF_RESKEY_system_user}" -l -c "
+psql -XAt --set='ON_ERROR_STOP=1' -p ${OCF_RESKEY_pgport} postgres <<EOQ
 $QUERY
 EOQ
-" postgres)
+")
     rc=$?
 
     echo $ANS
 
+    # possible error codes:
+    #   1: failed to get resources (memory, missing file, ...)
+    #   2: unable to connect
+    #   3: query failed
     return $rc
 }
 
