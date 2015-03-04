@@ -484,11 +484,6 @@ pg_stop() {
 
 }
 
-# Promote the standby instance to production 
-pg_promote() {
-
-}
-
 # Monitor the PostgreSQL instance
 pg_monitor() {
     local pgisready_rc
@@ -638,7 +633,7 @@ pg_demote() {
     fi
 
     #
-    # At this point, the instance must be stopped gracefully
+    # At this point, the instance **MUST** be stopped gracefully
     #
 
     # Note: We do not need to handle the recovery.conf file here as pg_start()
@@ -658,9 +653,79 @@ pg_demote() {
     return $OCF_ERR_GENERIC
 }
 
+# Promote the standby instance to production
+#
+pg_promote() {
+    local rc
+
+    pg_monitor
+    rc=$?
+    case "$rc" in
+        "$OCF_SUCCESS") # Running as slave. Normal, expected behavior.
+            ocf_log debug "$__OCF_ACTION - pg_promote: currently running as a standby."
+            ;;
+        "$OCF_RUNNING_MASTER") # Already a master. Unexpected, but no problem.
+            ocf_log info "$__OCF_ACTION - pg_promote: already running as a primary."
+            return $OCF_SUCCESS
+            ;;
+        "$OCF_NOT_RUNNING")
+            # Currently not running. Need to start before promoting.
+            ocf_log info "$__OCF_ACTION - pg_promote: currently not running, starting it."
+            pg_start
+            rc=$?
+            if [ rc -ne $OCF_SUCCESS ]; then
+                ocf_log error "$__OCF_ACTION - pg_promote: failed to start the instance."
+                return $OCF_ERR_GENERIC
+            fi
+            ;;
+        *) # Failed resource. Let the cluster manager recover.
+            ocf_log info "$__OCF_ACTION - pg_promote: unexpected error, cannot promote."
+            return $rc
+            ;;
+    esac
+
+    # 
+    # At this point, the instance **MUST** be started as a slave
+    #
+
+    # promoting
+    runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/pg_ctl -D ${OCF_RESKEY_pgdata} -w promote &>/dev/null"
+    rc=$?
+
+    # The instance promotion is asynchronous, so we need to wait for this
+    # process to complete.
+    pg_monitor
+    rc=$?
+    while [ $rc -ne $OCF_RUNNING_MASTER ] ; do
+        ocf_log debug "$__OCF_ACTION - pg_promote: waiting for the promote to complete."
+        sleep 1
+        pg_monitor
+        rc=$?
+    done
+
+    ocf_log debug "$__OCF_ACTION - pg_promote: promote completed according to the controldata."
+
+    # Safe tests
+    # force a complete check
+    $OCF_CHECK_LEVEL=10
+    pg_monitor
+    rc=$?
+
+    if [ $rc -eq $OCF_RUNNING_MASTER -a ! -f "${OCF_RESKEY_pgdata}/recovery.conf" ]; then
+        ocf_log info "$__OCF_ACTION - pg_promote: promote complete."
+        return $OCF_SUCCESS
+    fi
+
+    ocf_log error "$__OCF_ACTION - pg_promote: error while promoting."
+    return $OCF_ERR_GENERIC
+}
+
 # Called on pre and post actions.
 pg_notify() {
+    local type_op
+    type_op="${OCF_RESKEY_CRM_meta_notify_type}-${OCF_RESKEY_CRM_meta_notify_operation}"
 
+    ocf_log debug "Received $type_op notification."
 }
 
 
