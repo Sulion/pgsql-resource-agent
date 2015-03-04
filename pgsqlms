@@ -29,21 +29,21 @@ OCF_RESKEY_recovery_template_default="${OCF_RESKEY_pgdata_default}/recovery.conf
 # the system config
 export LANG="C"
 
+# PostgreSQL commands path
+export PGCTL="${OCF_RESKEY_bindir}/pg_ctl"
+export PGPSQL="${OCF_RESKEY_bindir}/psql"
+export PGCTRLDATA="${OCF_RESKEY_bindir}/pg_controldata"
+export PGISREADY="${OCF_RESKEY_bindir}/pg_isready"
+
 function pgsql_validate_all() {
     local rc
     local PGVERSION
 
-    # PostgreSQL commands path
-    export PGCTL="${OCF_RESKEY_bindir}/pg_ctl"
-    export PGPSQL="${OCF_RESKEY_bindir}/psql"
-    export PGCTRLDATA="${OCF_RESKEY_bindir}/pg_controldata"
-    export PGISREADY="${OCF_RESKEY_bindir}/pg_isready"
-
     # check binaries
-    check_binary $PGCTL
-    check_binary $PGPSQL
-    check_binary $PGCTRLDATA
-    check_binary $PGISREADY
+    check_binary "$PGCTL"
+    check_binary "$PGPSQL"
+    check_binary "$PGCTRLDATA"
+    check_binary "$PGISREADY"
     check_binary "${HA_SBIN_DIR}/crm_master"
     check_binary "cp"
     check_binary "sed"
@@ -287,7 +287,7 @@ EOQ
 
 # Compute a promote score based on the latest LSN of the cluster.
 #
-function _promote_score() {
+_promote_score() {
     local -i rc wal seg score
     local lsn
 
