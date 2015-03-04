@@ -503,6 +503,7 @@ pg_monitor() {
         # We confirm that the instance is up and get if it is a Primary or a
         # Secondary using pg_controldata (OCF_CHECK_LEVEL < 10) or psql and 
         # pg_is_in_recovery() (OCF_CHECK_LEVEL >= 10).
+        ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE is listening."
         _confirm_started
         return $?
 
@@ -515,11 +516,13 @@ pg_monitor() {
         #   - if instance is a warm standby
         # Except for the Warm standby case, this should be a transitional state
         # We try to confirm using pg_controldata
+        ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE rejects connections - we check again."
         _controldata
         controldata_rc=$?
-        if [ $controldata_rc -eq $OCF_RUNNING_MASTER -o $controldata_rc -eq $OCF_SUCESS]; then
+        if [ $controldata_rc -eq $OCF_RUNNING_MASTER -o $controldata_rc -eq $OCF_SUCCESS]; then
             # This state indicates that pg_isready check should succeed
             # We check again
+            ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE controldata shows a running status."
             _pg_isready
             pgisready_rc=$?
             if [ $pgisready_rc -eq 0 ]; then
@@ -527,6 +530,7 @@ pg_monitor() {
                 # We can check if the instance is Primary or Secondary using 
                 # pg_controldata (OCF_CHECK_LEVEL < 10) or psql and 
                 # pg_is_in_recovery() (OCF_CHECK_LEVEL >= 10).
+                ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE is listening."
                 _confirm_started
                 return $?
 
@@ -534,6 +538,7 @@ pg_monitor() {
                 # Still not consistent, raise an error.
                 # Note: if the instance is a Warm Standby, we end here.
                 # FIXME raise an hard error here ?
+                ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE controldata is not consistent with pg_isready (returned: $pgisready_rc) !"
                 return $OCF_ERR_GENERIC
             fi
 
@@ -546,17 +551,20 @@ pg_monitor() {
                 # Consistent with pg_controdata output
                 # We check the process status using pg_ctl status and check
                 # if it was propertly shut down using pg_controldata
+                ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE is not listening."
                 _confirm_stopped
                 return $?
 
             else
                 # Still not consistent, raise an error.
                 # FIXME raise an hard error here ?
+                ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE controldata is not consistent with pg_isready (returned: $pgisready_rc) !"
                 return $OCF_ERR_GENERIC
             fi
 
         else
             # Something went wrong with the controldata check.
+            ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): could not get instance $OCF_RESOURCE_INSTANCE status from controldata (returned: $controldata_rc) !"
             return $controldata_rc
         fi
 
@@ -564,17 +572,18 @@ pg_monitor() {
         # The instance is not listening
         # We check the process status using pg_ctl status and check
         # if it was propertly shut down using pg_controldata
+        ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE is not listening."
         _confirm_stopped
         return $?
 
     elif [ $pgisready_rc -eq 3 ]; then
         # No attempt was done, probably a syntax error
         # Hard configuration error, we don't want to retry or failover here
-        ocf_log error "$__OCF_ACTION - pg_monitor(_pg_isready): unknown error while checking instance $OCF_RESOURCE_INSTANCE state !"
+        ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): unknown error while checking if instance $OCF_RESOURCE_INSTANCE is listening (returned $pgisready_rc) !"
         return $OCF_ERR_CONFIGURED
     fi
 
-    ocf_log error "$__OCF_ACTION - pg_monitor: unexpected result when checking instance $OCF_RESOURCE_INSTANCE status."
+    ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): unexpected result when checking instance $OCF_RESOURCE_INSTANCE status."
     return $OCF_ERR_GENERIC
 }
 
