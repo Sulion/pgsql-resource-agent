@@ -299,20 +299,25 @@ _confirm_started() {
             # The query was executed, check the result
             if [ "$is_in_recovery" = "t" ]; then
                 # The instance is a Secondary.
+                ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE is a Secondary."
                 return $OCF_SUCCESS
             elif [ "$is_in_recovery" = "f" ]; then
                 # The instance is a Primary.
+                ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE is a Primary."
                 return $OCF_RUNNING_MASTER
             fi
             # This should not happen, raise a hard configuration error.
+            ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): the query used to check if instance $OCF_RESOURCE_INSTANCE is a Primary or a Secondary sent an unexpected result: \"$is_in_recovery\" !"
             return $OCF_ERR_CONFIGURED
         elif [ $query_rc -eq 1 -o $query_rc -eq 2 ]; then
             # psql cound not connect to the instance
             # FIXME raise an hard error here ?
+            ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): psql could not connect to instance $OCF_RESOURCE_INSTANCE !"
             return $OCF_ERR_GENERIC
         elif [ $query_rc -eq 3 ]; then
             # The query failed.
             # This should not happen, raise a hard configuration error.
+            ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): the query used to check if instance $OCF_RESOURCE_INSTANCE is a Primary or a Secondary failed !"
             return $OCF_ERR_CONFIGURED
         fi
     fi
@@ -324,9 +329,20 @@ _confirm_started() {
         # Something went wrong, the instance should not be listening if not
         # running !
         # FIXME raise an hard error here ?
+        ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE controldata shows that instance is not running, but the instance is listening on local socket !"
         return $OCF_ERR_GENERIC
+    elif [ $controldata_rc -eq $OCF_RUNNING_MASTER ]; then
+        # The running instance is a Primary
+        ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE is a Primary."
+        return $OCF_RUNNING_MASTER
+    elif [ $controldata_rc -eq $OCF_SUCCESS ]; then
+        # The running instance is a Secondary
+        ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE is a Secondary."
+        return $OCF_SUCCESS
     fi
-    # return the state of the running instance
+
+    # We should not get here, something went wrong
+    ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): could not get instance $OCF_RESOURCE_INSTANCE status from controldata (returned: $controldata_rc) !"
     return $controldata_rc
 
 }
@@ -345,28 +361,34 @@ _confirm_stopped() {
         # The pid file exists and the process is available
         # That should not be the case, return an error
         # FIXME raise an hard error at this point ?
+        ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE is not listening, but the process referenced in postmaster.pid exists !"
         return $OCF_ERR_GENERIC
     else
         # The pid file does not exists or the process is not available
         # We're good, continue the check with pg_controldata
+        ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): no postmaster process found for instance $OCF_RESOURCE_INSTANCE"
         _controldata
         controldata_rc=$?
         if [ $controldata_rc -eq $OCF_RUNNING_MASTER ]; then
             # The controldata has not been updated to "shutdown"
             # It should mean we had a crash on a Primary instance
+            ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE controldata indicates a running Primary instance, the instance has probably crashed !"
             return $OCF_FAILED_MASTER
         elif [ $controldata_rc -eq $OCF_SUCCESS ]; then
             # The controldata has not been updated to "shutdown in recovery"
             # It should mean we had a crash on a Secondary instance
             # There is no "FAILED_SLAVE" return code, so we return a 
             # generic error
+            ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE controldata indicates a running Secondary instance, the instance has probably crashed !"
             return $OCF_ERR_GENERIC
         elif [ $controldata_rc -eq $OCF_NOT_RUNNING ]; then
             # The controldata state is consistent, the instance was
             # probably propertly shut down.
+            ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE controldata indicates that the instance was propertly shut down."
             return $OCF_NOT_RUNNING
         else
             # Something went wrong with the controldata check.
+            ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): could not get instance $OCF_RESOURCE_INSTANCE status from controldata (returned: $controldata_rc) !"
             return $controldata_rc
         fi
     fi
