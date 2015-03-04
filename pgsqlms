@@ -33,13 +33,17 @@ function pgsql_validate_all() {
     local rc
     local PGVERSION
 
-    # FIXME
-    # http://www.linux-ha.org/doc/dev-guides/_testing_for_binaries_literal_have_binary_literal_and_literal_check_binary_literal.html
+    # PostgreSQL commands path
+    export PGCTL="${OCF_RESKEY_bindir}/pg_ctl"
+    export PGPSQL="${OCF_RESKEY_bindir}/psql"
+    export PGCTRLDATA="${OCF_RESKEY_bindir}/pg_controldata"
+    export PGISREADY="${OCF_RESKEY_bindir}/pg_isready"
 
     # check binaries
-    check_binary "${OCF_RESKEY_bindir}/pg_ctl"
-    check_binary "${OCF_RESKEY_bindir}/psql"
-    check_binary "${OCF_RESKEY_bindir}/pg_controldata"
+    check_binary $PGCTL
+    check_binary $PGPSQL
+    check_binary $PGCTRLDATA
+    check_binary $PGISREADY
     check_binary "${HA_SBIN_DIR}/crm_master"
     check_binary "cp"
     check_binary "sed"
@@ -174,7 +178,7 @@ EOF
 _pg_isready() {
     local rc
 
-    "${OCF_RESKEY_bindir}"/pg_isready -h "${OCF_RESKEY_pghost}" -p "${OCF_RESKEY_pgport}"
+    $PGISREADY -h "${OCF_RESKEY_pghost}" -p "${OCF_RESKEY_pgport}"
     rc=$?
 
     # possible error codes:
@@ -193,7 +197,7 @@ _pg_isready() {
 _pg_ctl_status() {
     local rc
 
-    runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/pg_ctl -D ${OCF_RESKEY_pgdata} status &> /dev/null"
+    runuser -l "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} status &> /dev/null"
     rc=$?
 
     # possible error codes:
@@ -212,7 +216,7 @@ _controldata() {
     local CMD
     local inststate
 
-    CMD="${OCF_RESKEY_bindir}/pg_controldata ${OCF_RESKEY_pgdata} 2>/dev/null | \
+    CMD="$PGCTRLDATA ${OCF_RESKEY_pgdata} 2>/dev/null | \
         sed -rn 's/^Database cluster state:\s+(.*)/\1/p' 2>/dev/null"
     inststate=$($CMD)
 
@@ -266,7 +270,7 @@ _query() {
     local QUERY="$1"
 
     ANS=$(runuser "${OCF_RESKEY_system_user}" -l -c "
-psql -XAt --set='ON_ERROR_STOP=1' -p ${OCF_RESKEY_pgport} postgres <<EOQ
+$PGPSQL -XAt --set='ON_ERROR_STOP=1' -p ${OCF_RESKEY_pgport} postgres <<EOQ
 $QUERY
 EOQ
 ")
@@ -458,7 +462,7 @@ pg_start() {
         return $OCF_ERR_GENERIC
     fi
 
-    runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/pg_ctl -D ${OCF_RESKEY_pgdata} -w start"
+    runuser -l "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -w start"
     rc=$?
 
     # wait for the start to finish
@@ -508,7 +512,7 @@ pg_stop() {
     # try to quit with proper shutdown
     #FIXME we should add a timeout in pg_ctl call, and try an immediate stop 
     # after that
-    runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/pg_ctl -D ${OCF_RESKEY_pgdata} -w -m fast stop"
+    runuser -l "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -w -m fast stop"
     rc=$?
 
     # wait for the stop to finish
@@ -664,7 +668,7 @@ pg_demote() {
     # pg_stop() or service or systemctl here as these commands might force-stop
     # the PostgreSQL instance using immediate after some timeout and return
     # success, which is misleading.
-    runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/pg_ctl -D ${OCF_RESKEY_pgdata} -w stop"
+    runuser -l "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -w stop"
     rc=$?
 
     # no need to wait for stop to complete, this is handled in pg_ctl using -w
@@ -739,7 +743,7 @@ pg_promote() {
     #
 
     # promoting
-    runuser -l "${OCF_RESKEY_system_user}" -c "${OCF_RESKEY_bindir}/pg_ctl -D ${OCF_RESKEY_pgdata} -w promote &>/dev/null"
+    runuser -l "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -w promote &>/dev/null"
     rc=$?
 
     # The instance promotion is asynchronous, so we need to wait for this
