@@ -281,6 +281,34 @@ EOQ
     return $rc
 }
 
+# Compute a promote score based on the latest LSN of the cluster.
+#
+function _promote_score() {
+    local -i rc wal seg score
+    local lsn
+
+    # FIXME: warning, the function call returns NULL if nothing has been
+    # received yet!
+    lsn=$(_query 'select pg_last_xlog_receive_location()')
+
+    wal="0x${lsn%/*}"
+    seg="0x${lsn#*/}"
+
+    # we should rely on dc or bc as 0xff000000 * $wal overflow at some point.
+    # The overflow is around 80808080/xxxxxxxx on my plateform, that leave a lot
+    # of xact before failing
+    score=$((0xff000000 * $wal + $seg))
+
+    # error overflow for now. We rise OCF_ERR_CONFIGURED to have a fatal error,
+    # not just a soft or hard one.
+    test $score -lt 0 && exit $OCF_ERR_CONFIGURED
+
+    ocf_log debug "$__OCF_ACTION - _promote_score: promote score is $score ($lsn)."
+
+    echo "$score"
+    return 0
+}
+
 # Checks to confirm if the instance is really started if _pg_isready returned
 # it should be the case, and to identify whether the instance is Primary or 
 # Secondary
@@ -764,26 +792,30 @@ case $1 in
     start)
         pg_start
         exit $?;;
-    stop) ;;
+    stop)
+        pg_stop
+        exit $?;;
     monitor)
         pg_monitor
         exit $?;;
-    promote) ;;
-    demote) ;;
-    notify) ;;
+    promote)
+        pg_promote
+        exit $?;;
+    demote)
+        pg_demote
+        exit $?;;
+    notify)
+        pg_notify
+        exit $?;;
     meta-data)
         ocf_meta_data
-        exit 0
-        ;;
+        exit 0;;
     methods)
         ocf_methods
-        exit 0
-        ;;
+        exit 0;;
     validate-all)
         pgsql_validate_all
-        exit $?
-        ;;
+        exit $?;;
     *)
-        exit $OCF_ERR_UNIMPLEMENTED
-        ;;
+        exit $OCF_ERR_UNIMPLEMENTED;;
 esac
