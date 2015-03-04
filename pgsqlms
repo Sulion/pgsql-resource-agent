@@ -167,6 +167,23 @@ ocf_methods() {
 EOF
 }
 
+_query() {
+    local rc
+    local ANS
+    local QUERY="$1"
+
+    ANS=$(runuser -l "${OCF_RESKEY_system_user}" -c "
+psql -XAt --set='ON_ERROR_STOP=1' postgres <<EOQ
+$QUERY
+EOQ
+" postgres)
+    rc=$?
+
+    echo $ANS
+
+    return $rc
+}
+
 # Start the PostgreSQL instance as a *slave*
 pg_start() {
     local rc
