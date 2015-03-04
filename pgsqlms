@@ -140,11 +140,20 @@ ocf_meta_data() {
       <content type="string" default="${OCF_RESKEY_recovery_template_default}" />
     </parameter>
 
+    <parameter name="last_lsn" unique="0" required="0">
+      <longdesc lang="en">
+        FIXME: DON'T TOUCH THIS
+      </longdesc>
+      <shortdesc lang="en">FIXME: DON'T TOUCH THIS</shortdesc>
+      <content type="string" default="0" />
+    </parameter>
+
   </parameters>
   <actions>
     <action name="start" timeout="120" />
     <action name="stop" timeout="120" />
     <action name="status" timeout="60" />
+    <action name="reload" timeout="60" />
     <action name="promote" timeout="60" />
     <action name="demote" timeout="120" />
     <action name="monitor" depth="0" timeout="30" interval="30"/>
@@ -163,6 +172,7 @@ ocf_methods() {
         start
         stop
         status
+        reload
         promote
         demote
         monitor
@@ -285,23 +295,45 @@ EOQ
     return $rc
 }
 
+# Convert LSN to decimal
+# FIXME tests!
+_lsn_to_decimal() {
+    local LSN="$1"
+    local wal seg
+
+    wal="0x${LSN%/*}"
+    seg="0x${LSN#*/}"
+
+    # we should rely on dc or bc as 0xff000000 * $wal overflow at some point.
+    # The overflow is around 80808080/xxxxxxxx on my plateform, that leave a lot
+    # of xact before failing
+    echo $((0xff000000 * $wal + $seg))
+}
+
 # Compute a promote score based on the latest LSN of the cluster.
 #
 _promote_score() {
-    local -i rc wal seg score
-    local lsn
+    local -i score
+    local lsn lastredo lastchkp
 
     # FIXME: warning, the function call returns NULL if nothing has been
     # received yet!
     lsn=$(_query 'select pg_last_xlog_receive_location()')
 
-    wal="0x${lsn%/*}"
-    seg="0x${lsn#*/}"
+    if [ -z "$lsn" ]; then
+        lastredo=$("$PGCTRLDATA" ${OCF_RESKEY_pgdata} 2>/dev/null | \
+            sed -rn 's/^Latest checkpoint.s REDO location:\s+(.*)/\1/p' 2>/dev/null)
+        lastredo=$(_lsn_to_decimal $lastredo)
 
-    # we should rely on dc or bc as 0xff000000 * $wal overflow at some point.
-    # The overflow is around 80808080/xxxxxxxx on my plateform, that leave a lot
-    # of xact before failing
-    score=$((0xff000000 * $wal + $seg))
+        lastchkp=$("$PGCTRLDATA" ${OCF_RESKEY_pgdata} 2>/dev/null | \
+            sed -rn 's/^Latest checkpoint location:\s+(.*)/\1/p' 2>/dev/null)
+        lastchkp=$(_lsn_to_decimal $lastchkp)
+
+        score=$lastchkp
+        test $lastchkp -lt $lastredo && score=$lastredo
+    else
+        score=$(_lsn_to_decimal $lsn)
+    fi
 
     # error overflow for now. We rise OCF_ERR_CONFIGURED to have a fatal error,
     # not just a soft or hard one.
@@ -643,6 +675,7 @@ pg_monitor() {
 #   * start it
 pg_demote() {
     local rc
+    local master_score
 
     pg_monitor
     rc=$?
@@ -689,6 +722,8 @@ pg_demote() {
     #
     # At this point, the instance **MUST** be stopped gracefully
     #
+    master_score=$(_promote_score)
+    crm_resource --resource $OCF_RESOURCE_INSTANCE --set-parameter last_lsn --parameter-value $master_score
 
     # Note: We do not need to handle the recovery.conf file here as pg_start()
     # deal with that itself. Equally, no need to wait for the start to complete
@@ -782,6 +817,13 @@ pg_notify() {
     ocf_log debug "Received $type_op notification."
 }
 
+pg_reload() {
+    # no action necessary, this action is just to inform pacemaker that
+    # modification of non-unique parameters can be applied without
+    # restarting the resource
+    ocf_log info "$__OCF_ACTION - pg_reload : instance $OCF_RESOURCE_INSTANCE reloaded."
+    return $OCF_SUCCESS
+}
 
 # Validate everything is fine before running the actions
 case $1 in
@@ -810,6 +852,9 @@ case $1 in
         exit $?;;
     notify)
         pg_notify
+        exit $?;;
+    reload)
+        pg_reload
         exit $?;;
     meta-data)
         ocf_meta_data
