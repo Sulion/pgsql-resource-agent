@@ -281,6 +281,98 @@ EOQ
     return $rc
 }
 
+# Checks to confirm if the instance is really started if _pg_isready returned
+# it should be the case, and to identify whether the instance is Primary or 
+# Secondary
+#
+_confirm_started() {
+    local is_in_recovery
+    local query_rc
+    local controldata_rc
+
+    if [ $OCF_CHECK_LEVEL -ge 10 ]; then
+        # Medium check, call psql and pg_is_in_recovery()
+        is_in_recovery=$(_query "SELECT pg_is_in_recovery()")
+        query_rc=$?
+
+        if [ $query_rc -eq 0 ]; then
+            # The query was executed, check the result
+            if [ "$is_in_recovery" = "t" ]; then
+                # The instance is a Secondary.
+                return $OCF_SUCCESS
+            elif [ "$is_in_recovery" = "f" ]; then
+                # The instance is a Primary.
+                return $OCF_RUNNING_MASTER
+            else
+                # This should not happen, raise a hard configuration error.
+                return $OCF_ERR_CONFIGURED
+            fi
+        elif [ $query_rc -eq 1 -o $query_rc -eq 2 ]; then
+            # psql cound not connect to the instance
+            # FIXME raise an hard error here ?
+            return $OCF_ERR_GENERIC
+        elif [ $query_rc -eq 3 ]; then
+            # The query failed.
+            # This should not happen, raise a hard configuration error.
+            return $OCF_ERR_CONFIGURED
+        fi
+    fi
+    # Soft check, call pg_controldata to check wether Primary or Secondary
+    _controldata
+    controldata_rc=$?
+    if [ $controldata_rc -eq $OCF_NOT_RUNNING ]; then
+        # Something went wrong, the instance should not listening if not
+        # running !
+        # FIXME raise an hard error here ?
+        return $OCF_ERR_GENERIC
+    fi
+    # return the state of the running instance
+    return $controldata_rc
+
+}
+
+# Checks to confirm if the instance is really stopped if _pg_isready returned
+# it should be the case, and if it was propertly shut down.
+#
+_confirm_stopped() {
+    local pgctlstatus_rc
+    local controldata_rc
+
+    _pg_ctl_status
+    pgctlstatus_rc=$?
+
+    if [ $pgctlstatus_rc -eq 0 ]; then
+        # The pid file exists and the process is available
+        # That should not be the case, return an error
+        # FIXME raise an hard error at this point ?
+        return $OCF_ERR_GENERIC
+    else
+        # The pid file does not exists or the process is not available
+        # We're good, continue the check with pg_controldata
+        _controldata
+        controldata_rc=$?
+        if [ $controldata_rc -eq $OCF_RUNNING_MASTER ]; then
+            # The controldata has not been updated to "shutdown"
+            # It should mean we had a crash on a Primary instance
+            return $OCF_FAILED_MASTER
+        elif [ $controldata_rc -eq $OCF_SUCCESS ]; then
+            # The controldata has not been updated to "shutdown in recovery"
+            # It should mean we had a crash on a Secondary instance
+            # There is no "FAILED_SLAVE" return code, so we return a 
+            # generic error
+            return $OCF_ERR_GENERIC
+        elif [ $controldata_rc -eq $OCF_NOT_RUNNING ]; then
+            # The controldata state is consistent, the instance was
+            # probably propertly shut down.
+            return $OCF_NOT_RUNNING
+        else
+            # Something went wrong with the controldata check.
+            return $controldata_rc
+        fi
+    fi
+
+}
+
 # Start the PostgreSQL instance as a *slave*
 pg_start() {
     local rc
@@ -402,9 +494,6 @@ pg_monitor() {
     local rc
     local pgisready_rc
     local controldata_rc
-    local pgctlstatus_rc
-    local query_rc
-    local is_in_recovery
 
     # First check, verify if the instance is listening
     _pg_isready
@@ -412,45 +501,8 @@ pg_monitor() {
 
     if [ $pgisready_rc -eq 0 ]; then
         # The instance is listening
-#FIXME move this test to a _confirm_started() function ?
-        if [ $OCF_CHECK_LEVEL -ge 10 ]; then
-            # Medium check, call psql and pg_is_in_recovery()
-            is_in_recovery=$(_query "SELECT pg_is_in_recovery()")
-            query_rc=$?
-
-            if [ $query_rc -eq 0 ]; then
-                # The query was executed, check the result
-                if [ "$is_in_recovery" = "t" ]; then
-                    # The instance is a Secondary.
-                    return $OCF_SUCCESS
-                elif [ "$is_in_recovery" = "f" ]; then
-                    # The instance is a Primary.
-                    return $OCF_RUNNING_MASTER
-                else
-                    # This should not happen, raise a hard configuration error.
-                    return $OCF_ERR_CONFIGURED
-                fi
-            elif [ $query_rc -eq 1 -o $query_rc -eq 2 ]; then
-                # psql cound not connect to the instance
-                # FIXME raise an hard error here ?
-                return $OCF_ERR_GENERIC
-            elif [ $query_rc -eq 3 ]; then
-                # The query failed.
-                # This should not happen, raise a hard configuration error.
-                return $OCF_ERR_CONFIGURED
-            fi
-        fi
-        # Soft check, call pg_controldata to check wether Primary or Secondary
-        _controldata
-        controldata_rc=$?
-        if [ $controldata_rc -eq $OCF_NOT_RUNNING ]; then
-            # Something went wrong, the instance should not listening if not
-            # running !
-            # FIXME raise an hard error here ?
-            return $OCF_ERR_GENERIC
-        fi
-        # return the state of the running instance
-        return $controldata_rc
+        _confirm_started
+        return $?
 
     elif [ $pgisready_rc -eq 1 ]; then
         # The attempt was rejected.
@@ -470,36 +522,9 @@ pg_monitor() {
             if [ $pgisready_rc -eq 0 ]; then
                 # Consistent with pg_controdata output
                 # We can check if the instance is Primary or Secondary
-#FIXME move this test to a _confirm_started() function ?
-                if [ $OCF_CHECK_LEVEL -ge 10 ]; then
-                    # Medium check, call psql and pg_is_in_recovery()
-                    is_in_recovery=$(_query "SELECT pg_is_in_recovery()")
-                    query_rc=$?
-        
-                    if [ $query_rc -eq 0 ]; then
-                        # The query was executed, check the result
-                        if [ "$is_in_recovery" = "t" ]; then
-                            # The instance is a Secondary.
-                            return $OCF_SUCCESS
-                        elif [ "$is_in_recovery" = "f" ]; then
-                            # The instance is a Primary.
-                            return $OCF_RUNNING_MASTER
-                        else
-                            # This should not happen, raise a hard configuration error.
-                            return $OCF_ERR_CONFIGURED
-                        fi
-                    elif [ $query_rc -eq 1 -o $query_rc -eq 2 ]; then
-                        # psql cound not connect to the instance
-                        # FIXME raise an hard error here ?
-                        return $OCF_ERR_GENERIC
-                    elif [ $query_rc -eq 3 ]; then
-                        # The query failed.
-                        # This should not happen, raise a hard configuration error.
-                        return $OCF_ERR_CONFIGURED
-                    fi
-                fi
-                # Soft check, only return the previous controldata return code
-                return $controldata_rc
+                _confirm_started
+                return $?
+
             else
                 # Still not consistent, raise an error.
                 # FIXME raise an hard error here ?
@@ -514,38 +539,9 @@ pg_monitor() {
             if [ $pgisready_rc -eq 2 ]; then
                 # Consistent with pg_controdata output
                 # We can check the process status.
-#FIXME move this test to a _confirm_stopped() function ?
-                _pg_ctl_status
-                pgctlstatus_rc=$?
-                if [ $pgctlstatus_rc -eq 0 ]; then
-                    # The pid file exists and the process is available
-                    # That should not be the case, return an error
-                    # FIXME raise an hard error at this point ?
-                    return $OCF_ERR_GENERIC
-                else
-                    # The pid file does not exists or the process is not available
-                    # We're good, continue the check with pg_controldata
-                    _controldata
-                    controldata_rc=$?
-                    if [ $controldata_rc -eq $OCF_RUNNING_MASTER ]; then
-                        # The controldata has not been updated to "shutdown"
-                        # It should mean we had a crash on a Primary instance
-                        return $OCF_FAILED_MASTER
-                    elif [ $controldata_rc -eq $OCF_SUCCESS ]; then
-                        # The controldata has not been updated to "shutdown in recovery"
-                        # It should mean we had a crash on a Secondary instance
-                        # There is no "FAILED_SLAVE" return code, so we return a 
-                        # generic error
-                        return $OCF_ERR_GENERIC
-                    elif [ $controldata_rc -eq $OCF_NOT_RUNNING ]; then
-                        # The controldata state is consistent, the instance was
-                        # probably propertly shut down.
-                        return $OCF_NOT_RUNNING
-                    else
-                        # Something went wrong with the controldata check.
-                        return $controldata_rc
-                    fi
-                fi
+                _confirm_stopped
+                return $?
+
             else
                 # Still not consistent, raise an error.
                 # FIXME raise an hard error here ?
@@ -561,38 +557,9 @@ pg_monitor() {
     elif [ $pgisready_rc -eq 2 ]; then
         # The instance is not listening
         # Check instance process status
-#FIXME move this test to a _confirm_stopped() function ?
-        _pg_ctl_status
-        pgctlstatus_rc=$?
-        if [ $pgctlstatus_rc -eq 0 ]; then
-            # The pid file exists and the process is available
-            # That should not be the case, return an error
-            # FIXME raise an hard error at this point ?
-            return $OCF_ERR_GENERIC
-        else
-            # The pid file does not exists or the process is not available
-            # We're good, continue the check with pg_controldata
-            _controldata
-            controldata_rc=$?
-            if [ $controldata_rc -eq $OCF_RUNNING_MASTER ]; then
-                # The controldata has not been updated to "shutdown"
-                # It should mean we had a crash on a Primary instance
-                return $OCF_FAILED_MASTER
-            elif [ $controldata_rc -eq $OCF_SUCCESS ]; then
-                # The controldata has not been updated to "shutdown in recovery"
-                # It should mean we had a crash on a Secondary instance
-                # There is no "FAILED_SLAVE" return code, so we return a 
-                # generic error
-                return $OCF_ERR_GENERIC
-            elif [ $controldata_rc -eq $OCF_NOT_RUNNING ]; then
-                # The controldata state is consistent, the instance was
-                # probably propertly shut down.
-                return $OCF_NOT_RUNNING
-            else
-                # Something went wrong with the controldata check.
-                return $controldata_rc
-            fi
-        fi
+        _confirm_stopped
+        return $?
+
     elif [ $pgisready_rc -eq 3 ]; then
         # No attempt was done, probably a syntax error
         # Hard configuration error, we don't want to retry or failover here
