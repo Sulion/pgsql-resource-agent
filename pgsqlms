@@ -770,26 +770,30 @@ case $1 in
     start)
         pg_start
         exit $?;;
-    stop) ;;
+    stop)
+        pg_stop
+        exit $?;;
     monitor)
         pg_monitor
         exit $?;;
-    promote) ;;
-    demote) ;;
-    notify) ;;
+    promote)
+        pg_promote
+        exit $?;;
+    demote)
+        pg_demote
+        exit $?;;
+    notify)
+        pg_notify
+        exit $?;;
     meta-data)
         ocf_meta_data
-        exit 0
-        ;;
+        exit 0;;
     methods)
         ocf_methods
-        exit 0
-        ;;
+        exit 0;;
     validate-all)
         pgsql_validate_all
-        exit $?
-        ;;
+        exit $?;;
     *)
-        exit $OCF_ERR_UNIMPLEMENTED
-        ;;
+        exit $OCF_ERR_UNIMPLEMENTED;;
 esac
