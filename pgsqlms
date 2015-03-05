@@ -215,6 +215,11 @@ _pg_ctl_status() {
     return $rc
 }
 
+_controldata_state() {
+    "$PGCTRLDATA" "${OCF_RESKEY_pgdata}" 2>/dev/null | \
+        sed -rn 's/^Database cluster state:\s+(.*)/\1/p' 2>/dev/null
+}
+
 # Use pg_controldata to check if the state of the PostgreSQL server. This 
 # function return codes depending on this state, so we can find wether the 
 # instance is Primary or Secondary, or use it to detect any inconsistency
@@ -224,9 +229,7 @@ _controldata() {
     local CMD
     local inststate
 
-    CMD="\"$PGCTRLDATA\" ${OCF_RESKEY_pgdata} 2>/dev/null | \
-        sed -rn 's/^Database cluster state:\s+(.*)/\1/p' 2>/dev/null"
-    inststate=$($CMD)
+    inststate=$(_controldata_state)
 
     while [ "$inststate" ]; do
         case $inststate in
@@ -257,7 +260,7 @@ _controldata() {
                 # check if it changes.
                 ocf_log debug "$__OCF_ACTION - _controldata: instance $OCF_RESOURCE_INSTANCE state is \"$inststate\": waiting."
                 sleep 1
-                inststate=$($CMD)
+                inststate=$(_controldata_state)
                 ;;
         esac
     done
