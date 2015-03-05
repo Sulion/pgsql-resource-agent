@@ -15,7 +15,6 @@ OCF_RESKEY_bindir_default="/usr/bin"
 OCF_RESKEY_pgdata_default="/var/lib/pgsql/data"
 OCF_RESKEY_pgport_default=5432
 OCF_RESKEY_pghost_default="/tmp"
-OCF_RESKEY_recovery_template_default="${OCF_RESKEY_pgdata_default}/recovery.conf.pcmk"
 
 : ${OCF_RESKEY_system_user=${OCF_RESKEY_system_user_default}}
 : ${OCF_RESKEY_bindir=${OCF_RESKEY_bindir_default}}
@@ -23,7 +22,7 @@ OCF_RESKEY_recovery_template_default="${OCF_RESKEY_pgdata_default}/recovery.conf
 : ${OCF_RESKEY_pgport=${OCF_RESKEY_pgport_default}}
 : ${OCF_RESKEY_pghost=${OCF_RESKEY_pghost_default}}
 : ${OCF_RESKEY_service=${OCF_RESKEY_service_default}}
-: ${OCF_RESKEY_recovery_template=${OCF_RESKEY_recovery_template_default}}
+: ${OCF_RESKEY_recovery_template=${OCF_RESKEY_pgdata}/recovery.conf.pcmk}
 
 # this script expect english output, not random translations depending on
 # the system config
@@ -143,7 +142,7 @@ ocf_meta_data() {
         before starting the instance as slave
       </longdesc>
       <shortdesc lang="en">Path to the recovery.conf template.</shortdesc>
-      <content type="string" default="${OCF_RESKEY_recovery_template_default}" />
+      <content type="string" default="${OCF_RESKEY_pgdata_template}/recovery.conf.pcmk" />
     </parameter>
 
     <parameter name="last_lsn" unique="0" required="0">
