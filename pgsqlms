@@ -719,11 +719,13 @@ pg_demote() {
             ;;
     esac
 
+    # FIXME we need to make sure at least one slave is connected!!
+
     # WARNING: the instance **MUST** be stopped gracefully. Do **not** use
     # pg_stop() or service or systemctl here as these commands might force-stop
     # the PostgreSQL instance using immediate after some timeout and return
     # success, which is misleading.
-    runuser "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -w stop"
+    runuser "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -m fast -w stop"
     rc=$?
 
     # no need to wait for stop to complete, this is handled in pg_ctl using -w
