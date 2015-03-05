@@ -72,7 +72,7 @@ function pgsql_validate_all() {
     # require 9.3 minimum
     PGVERSION="$(cat ${OCF_RESKEY_pgdata}/PG_VERSION)"
     PGVERNUM=$(( ${PGVERSION%.*} * 10000 + ${PGVERSION#*.} * 100 ))
-    if [ $PGVERNUM -ge 90300 ] ; then
+    if [ $PGVERNUM -lt 90300 ] ; then
         ocf_log error "PostgreSQL version $PGVERSION not supported. Require 9.3 and more.";
         return $OCF_ERR_CONFIGURED
     fi
@@ -197,7 +197,6 @@ _pg_isready() {
     #   2: no response, usually means the instance is down
     #   3: no attempt, probably a syntax error, should not happen
     return $rc
-    
 }
 
 # Check the postmaster.pid file and the postmaster process.
@@ -207,14 +206,13 @@ _pg_isready() {
 _pg_ctl_status() {
     local rc
 
-    runuser -l "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} status &> /dev/null"
+    runuser -l "${OCF_RESKEY_system_user}" -c "\"$PGCTL\" -D ${OCF_RESKEY_pgdata} status &> /dev/null"
     rc=$?
 
     # possible error codes:
     #   3: postmaster.pid file does not exists OR it does but the process 
     #      with the pid found in the file is not alive
     return $rc
-
 }
 
 # Use pg_controldata to check if the state of the PostgreSQL server. This 
@@ -226,7 +224,7 @@ _controldata() {
     local CMD
     local inststate
 
-    CMD="$PGCTRLDATA ${OCF_RESKEY_pgdata} 2>/dev/null | \
+    CMD="\"$PGCTRLDATA\" ${OCF_RESKEY_pgdata} 2>/dev/null | \
         sed -rn 's/^Database cluster state:\s+(.*)/\1/p' 2>/dev/null"
     inststate=$($CMD)
 
