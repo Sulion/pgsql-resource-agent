@@ -61,6 +61,12 @@ function pgsql_validate_all() {
         return $OCF_ERR_CONFIGURED
     fi
 
+    # check recovery template
+    if [ ! -f "${OCF_RESKEY_recovery_template}" ] ; then
+        ocf_log error "Recovery template '${OCF_RESKEY_recovery_template}' does not exists";
+        return $OCF_ERR_CONFIGURED
+    fi
+
     # check system user
     id -nu "${OCF_RESKEY_system_user}" > /dev/null 2>&1
     rc=$?
