@@ -193,9 +193,12 @@ EOF
 #
 _pg_isready() {
     local rc
+    local msg
 
-    $PGISREADY -h "${OCF_RESKEY_pghost}" -p "${OCF_RESKEY_pgport}"
+    msg=$($PGISREADY -h "${OCF_RESKEY_pghost}" -p "${OCF_RESKEY_pgport}")
     rc=$?
+
+    ocf_log debug "$__OCF_ACTION - _pg_isready: $msg."
 
     # possible error codes:
     #   1: ping rejected (usually when instance is in startup, in crash
