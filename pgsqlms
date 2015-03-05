@@ -496,8 +496,12 @@ pg_start() {
     # the primary.
     # As we can not reload a recovery.conf file on a standby without restarting
     # it, we will leave with this.
-    cp -f "${OCF_RESKEY_recovery_template}" "${OCF_RESKEY_pgdata}/recovery.conf" &> /dev/null
+    cp -f "${OCF_RESKEY_recovery_template}" "${OCF_RESKEY_pgdata}/recovery.conf"
     rc=$?
+    chown "${OCF_RESKEY_system_user}": "${OCF_RESKEY_pgdata}/recovery.conf"
+    rc=$((rc + $?))
+    chmod 0644 "${OCF_RESKEY_pgdata}/recovery.conf"
+    rc=$((rc + $?))
 
     if [ $rc -ne 0 ]; then
         return $OCF_ERR_GENERIC
