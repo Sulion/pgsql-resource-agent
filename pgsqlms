@@ -525,6 +525,8 @@ pg_start() {
 # Stop the PostgreSQL instance
 pg_stop() {
     local rc
+    local state
+    local PIDFILE="${OCF_RESKEY_pgdata}/postmaster.pid"
     OCF_CHECK_LEVEL=20
 
     # instance must be running as slave or master or being stopped
@@ -542,11 +544,18 @@ pg_stop() {
     # From here, the instance is running for sure
     #
 
+    _controldata
+    state=$?
+
     # try to quit with proper shutdown
     #FIXME we should add a timeout in pg_ctl call, and try an immediate stop 
     # after that
     runuser -l "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -w -m fast stop"
     rc=$?
+
+    if [ $rc -eq 1 -a ! -f "$PIDFILE" -a state -eq $OCF_NOT_RUNNING ]; then
+        return $OCF_SUCCESS
+    fi
 
     # wait for the stop to finish
     if [ $rc -eq 0 ]; then
@@ -563,7 +572,7 @@ pg_stop() {
         done
 
         ocf_log info  "$__OCF_ACTION - pg_stop: instance $OCF_RESOURCE_INSTANCE stopped."
-        return $rc
+        return $OCF_SUCCESS
     fi
 
     ocf_log error "$__OCF_ACTION - pg_stop: instance $OCF_RESOURCE_INSTANCE failed to stop."
