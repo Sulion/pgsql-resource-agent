@@ -214,7 +214,7 @@ _pg_isready() {
 _pg_ctl_status() {
     local rc
 
-    runuser -l "${OCF_RESKEY_system_user}" -c "\"$PGCTL\" -D ${OCF_RESKEY_pgdata} status &> /dev/null"
+    runuser "${OCF_RESKEY_system_user}" -c "\"$PGCTL\" -D ${OCF_RESKEY_pgdata} status &> /dev/null"
     rc=$?
 
     # possible error codes:
@@ -288,7 +288,7 @@ _query() {
     local ANS
     local QUERY="$1"
 
-    ANS=$(runuser "${OCF_RESKEY_system_user}" -l -c "
+    ANS=$(runuser "${OCF_RESKEY_system_user}" -c "
 $PGPSQL -XAt --set='ON_ERROR_STOP=1' -p ${OCF_RESKEY_pgport} postgres <<EOQ
 $QUERY
 EOQ
@@ -503,7 +503,7 @@ pg_start() {
         return $OCF_ERR_GENERIC
     fi
 
-    runuser -l "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -w start"
+    runuser "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -w start"
     rc=$?
 
     # wait for the start to finish
@@ -558,7 +558,7 @@ pg_stop() {
     # try to quit with proper shutdown
     #FIXME we should add a timeout in pg_ctl call, and try an immediate stop 
     # after that
-    runuser -l "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -w -m fast stop"
+    runuser "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -w -m fast stop"
     rc=$?
 
     if [ $rc -eq 1 -a ! -f "$PIDFILE" -a state -eq $OCF_NOT_RUNNING ]; then
@@ -719,7 +719,7 @@ pg_demote() {
     # pg_stop() or service or systemctl here as these commands might force-stop
     # the PostgreSQL instance using immediate after some timeout and return
     # success, which is misleading.
-    runuser -l "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -w stop"
+    runuser "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -w stop"
     rc=$?
 
     # no need to wait for stop to complete, this is handled in pg_ctl using -w
@@ -796,7 +796,7 @@ pg_promote() {
     #
 
     # promoting
-    runuser -l "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -w promote &>/dev/null"
+    runuser "${OCF_RESKEY_system_user}" -c "$PGCTL -D ${OCF_RESKEY_pgdata} -w promote &>/dev/null"
     rc=$?
 
     # The instance promotion is asynchronous, so we need to wait for this
