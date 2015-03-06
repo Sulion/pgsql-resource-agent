@@ -391,7 +391,7 @@ _confirm_started() {
             elif [ "$is_in_recovery" = "f" ]; then
                 # The instance is a Primary.
                 ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE is a Primary."
-                "$CRM_MASTER" -v $MASTER_SCORE
+                $CRM_MASTER -v $MASTER_SCORE
                 return $OCF_RUNNING_MASTER
             fi
             # This should not happen, raise a hard configuration error.
@@ -422,12 +422,12 @@ _confirm_started() {
     elif [ $controldata_rc -eq $OCF_RUNNING_MASTER ]; then
         # The running instance is a Primary
         ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE is a Primary."
-        "$CRM_MASTER" -v $MASTER_SCORE
+        $CRM_MASTER -v $MASTER_SCORE
         return $OCF_RUNNING_MASTER
     elif [ $controldata_rc -eq $OCF_SUCCESS ]; then
         # The running instance is a Secondary
         ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE is a Secondary."
-        "$CRM_MASTER" -D
+        $CRM_MASTER -D
         return $OCF_SUCCESS
     fi
 
@@ -445,7 +445,7 @@ _confirm_stopped() {
     local controldata_rc
 
     # If reaching this point, we can not be a master
-    "$CRM_MASTER" -D
+    $CRM_MASTER -D
 
     _pg_ctl_status
     pgctlstatus_rc=$?
@@ -675,7 +675,7 @@ pg_monitor() {
                 ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE controldata is not consistent with pg_isready (returned: $pgisready_rc) !"
 
                 # FIXME useful ?
-                "$CRM_MASTER" -D
+                $CRM_MASTER -D
 
                 return $OCF_ERR_GENERIC
             fi
@@ -699,7 +699,7 @@ pg_monitor() {
                 ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE controldata is not consistent with pg_isready (returned: $pgisready_rc) !"
 
                 # FIXME useful ?
-                "$CRM_MASTER" -D
+                $CRM_MASTER -D
 
                 return $OCF_ERR_GENERIC
             fi
@@ -709,7 +709,7 @@ pg_monitor() {
             ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): could not get instance $OCF_RESOURCE_INSTANCE status from controldata (returned: $controldata_rc) !"
 
             # FIXME useful ?
-            "$CRM_MASTER" -D
+            $CRM_MASTER -D
 
             return $controldata_rc
         fi
@@ -728,13 +728,13 @@ pg_monitor() {
         ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): unknown error while checking if instance $OCF_RESOURCE_INSTANCE is listening (returned $pgisready_rc) !"
 
         # FIXME useful ?
-        "$CRM_MASTER" -D
+        $CRM_MASTER -D
 
         return $OCF_ERR_CONFIGURED
     fi
 
     # FIXME useful ?
-    "$CRM_MASTER" -D
+    $CRM_MASTER -D
 
     ocf_log error "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): unexpected result when checking instance $OCF_RESOURCE_INSTANCE status."
     return $OCF_ERR_GENERIC
@@ -921,17 +921,17 @@ pg_notify() {
     case $type_op in
         post-promote)
             if [ "$OCF_RESKEY_CRM_meta_notify_promote_uname" != "$NODENAME" ]; then
-                "$CRM_MASTER" -D
+                $CRM_MASTER -D
                 ocf_log info "$__OCF_ACTION - notify : deleting my master score."
             else
-                "$CRM_MASTER" -v $MASTER_SCORE
+                $CRM_MASTER -v $MASTER_SCORE
                 ocf_log info "$__OCF_ACTION - notify : setting my score as master."
             fi
             ;;
         post-demote|post-stop)
                 score=$(_promote_score)
                 ocf_log info "$__OCF_ACTION - notify : my score is $score."
-                "$CRM_MASTER" -v $score
+                $CRM_MASTER -v $score
             ;;
     esac
 }
