@@ -720,14 +720,23 @@ pg_demote() {
             ocf_log debug "$__OCF_ACTION - pg_demote: currently running as a standby."
             return $OCF_SUCCESS
             ;;
-        "$OCF_NOT_RUNNING") # Currently not running. This state is unexpected.
-            ocf_log error "$__OCF_ACTION - pg_demote: currently not running."
-            return $OCF_ERR_GENERIC
-            ;;
-        *) # Failed resource. Let the cluster manager recover.
-            ocf_log error "$__OCF_ACTION - pg_demote: unexpected error, cannot demote."
-            return $rc
-            ;;
+        # "$OCF_NOT_RUNNING") # Currently not running. This state is unexpected.
+        #     ocf_log error "$__OCF_ACTION - pg_demote: currently not running."
+        #     return $OCF_ERR_GENERIC
+        #     ;;
+        # *) # Failed resource. Let the cluster manager recover.
+        #     ocf_log error "$__OCF_ACTION - pg_demote: unexpected error, cannot demote."
+        #     return $rc
+        #     ;;
+
+        # We actually prefer rising a hard or fatal error instead of leaving
+        # the CRM abording its transition for a new one because of a soft error.
+        # The hard error will force the CRM to move the resource immediately
+        "$OCF_ERR_CONFIGURED")
+            return $OCF_ERR_CONFIGURED
+        *)
+            return $OCF_ERR_INSTALLED
+
     esac
 
     # FIXME we need to make sure at least one slave is connected!!
