@@ -849,7 +849,23 @@ pg_notify() {
     local type_op
     type_op="${OCF_RESKEY_CRM_meta_notify_type}-${OCF_RESKEY_CRM_meta_notify_operation}"
 
-    ocf_log debug "Received $type_op notification."
+    ocf_log debug "Received $type_op notification:"
+    ocf_log debug "  active_resource: $OCF_RESKEY_CRM_meta_notify_active_resource"
+    ocf_log debug "  inactive_resource: $OCF_RESKEY_CRM_meta_notify_inactive_resource"
+    ocf_log debug "  master_resource: $OCF_RESKEY_CRM_meta_notify_master_resource"
+    ocf_log debug "  slave_resource: $OCF_RESKEY_CRM_meta_notify_slave_resource"
+    ocf_log debug "  start_resource: $OCF_RESKEY_CRM_meta_notify_start_resource"
+    ocf_log debug "  stop_resource: $OCF_RESKEY_CRM_meta_notify_stop_resource"
+    ocf_log debug "  promote_resource: $OCF_RESKEY_CRM_meta_notify_promote_resource"
+    ocf_log debug "  demote_resource: $OCF_RESKEY_CRM_meta_notify_demote_resource"
+    ocf_log debug "  start_uname: $OCF_RESKEY_CRM_meta_notify_start_uname"
+    ocf_log debug "  stop_uname: $OCF_RESKEY_CRM_meta_notify_stop_uname"
+    ocf_log debug "  promote_uname: $OCF_RESKEY_CRM_meta_notify_promote_uname"
+    ocf_log debug "  demote_uname: $OCF_RESKEY_CRM_meta_notify_demote_uname"
+    ocf_log debug "  active_uname: $OCF_RESKEY_CRM_meta_notify_active_uname"
+    ocf_log debug "  inactive_uname: $OCF_RESKEY_CRM_meta_notify_inactive_uname"
+    ocf_log debug "  master_uname: $OCF_RESKEY_CRM_meta_notify_master_uname"
+    ocf_log debug "  slave_uname: $OCF_RESKEY_CRM_meta_notify_slave_uname"
 }
 
 pg_reload() {
