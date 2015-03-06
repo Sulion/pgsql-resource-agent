@@ -738,7 +738,7 @@ pg_demote() {
     # FIXME: Ask for a higher OCF_CHECK_LEVEL ?
     pg_monitor
     rc=$?
-    if [ $? -ne $OCF_NOT_RUNNING ]; then
+    if [ $rc -ne $OCF_NOT_RUNNING ]; then
         ocf_log error "$__OCF_ACTION - pg_demote: unexpected $OCF_RESOURCE_INSTANCE state: monitor status ($rc) disagree with pg_ctl return code."
         return $OCF_ERR_GENERIC
     fi
@@ -754,7 +754,7 @@ pg_demote() {
     # here, handled in pg_start().
     pg_start
     rc=$?
-    if [ $? -eq $OCF_SUCCESS ]; then
+    if [ $rc -eq $OCF_SUCCESS ]; then
         ocf_log info "$__OCF_ACTION - pg_demote: $OCF_RESOURCE_INSTANCE started as a standby."
         return $OCF_SUCCESS
     fi
