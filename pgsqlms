@@ -757,8 +757,8 @@ pg_demote() {
     #
     # At this point, the instance **MUST** be stopped gracefully
     #
-    master_score=$(_promote_score)
-    crm_resource --resource $OCF_RESOURCE_INSTANCE --set-parameter last_lsn --parameter-value $master_score
+    #master_score=$(_promote_score)
+    #crm_resource --resource $OCF_RESOURCE_INSTANCE --set-parameter last_lsn --parameter-value $master_score
 
     # Note: We do not need to handle the recovery.conf file here as pg_start()
     # deal with that itself. Equally, no need to wait for the start to complete
