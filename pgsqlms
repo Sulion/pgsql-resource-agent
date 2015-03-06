@@ -831,7 +831,7 @@ pg_promote() {
 
     # Safe tests
     # force a complete check
-    $OCF_CHECK_LEVEL=10
+    OCF_CHECK_LEVEL=10
     pg_monitor
     rc=$?
 
