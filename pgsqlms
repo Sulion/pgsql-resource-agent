@@ -438,8 +438,15 @@ _confirm_stopped() {
         return $OCF_ERR_GENERIC
     else
         # The pid file does not exists or the process is not available
-        # We're good, continue the check with pg_controldata
         ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): no postmaster process found for instance $OCF_RESOURCE_INSTANCE"
+
+        if [ -f "${OCF_RESKEY_pgdata}/backup_label" ]; then
+            # We are probably on a freshly built standby that never start yet.
+            ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): backup_label file exists: probably on a never started standby."
+            return $OCF_NOT_RUNNING
+        fi
+
+        # Continue the check with pg_controldata
         _controldata
         controldata_rc=$?
         if [ $controldata_rc -eq $OCF_RUNNING_MASTER ]; then
@@ -596,6 +603,10 @@ pg_stop() {
 pg_monitor() {
     local pgisready_rc
     local controldata_rc
+
+    if ocf_is_probe; then
+        ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): monitor is a probe."
+    fi
 
     # First check, verify if the instance is listening
     _pg_isready
