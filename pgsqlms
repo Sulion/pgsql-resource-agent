@@ -734,9 +734,10 @@ pg_demote() {
         # The hard error will force the CRM to move the resource immediately
         "$OCF_ERR_CONFIGURED")
             return $OCF_ERR_CONFIGURED
+            ;;
         *)
             return $OCF_ERR_INSTALLED
-
+            ;;
     esac
 
     # FIXME we need to make sure at least one slave is connected!!
