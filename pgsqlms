@@ -898,16 +898,13 @@ pg_notify() {
     ocf_log debug "$__OCF_ACTION - pg_notify: slave_uname: $OCF_RESKEY_CRM_meta_notify_slave_uname"
 
     case $type_op in
-        post-promote)
-            if [ "$OCF_RESKEY_CRM_meta_notify_promote_uname" != "$NODENAME" ]; then
-                $CRM_MASTER -D
-                ocf_log info "$__OCF_ACTION - notify : deleting my master score."
-            fi
+        post-start)
+            $CRM_MASTER -v 1
             ;;
-        post-demote|post-stop)
-                score=$(_promote_score)
-                ocf_log info "$__OCF_ACTION - notify : my score is $score."
-                $CRM_MASTER -v $score
+        pre-promote)
+            score=$(_promote_score)
+            ocf_log info "$__OCF_ACTION - notify : my score is $score."
+            $CRM_MASTER -v $score
             ;;
     esac
 }
