@@ -34,7 +34,6 @@ export PGPSQL="${OCF_RESKEY_bindir}/psql"
 export PGCTRLDATA="${OCF_RESKEY_bindir}/pg_controldata"
 export PGISREADY="${OCF_RESKEY_bindir}/pg_isready"
 export CRM_MASTER="${HA_SBIN_DIR}/crm_master -l reboot"
-export MASTER_SCORE=5
 export NODENAME=$(ocf_local_nodename)
 
 function pgsql_validate_all() {
@@ -906,6 +905,10 @@ pg_notify() {
             ocf_log info "$__OCF_ACTION - notify : my score is $score."
             $CRM_MASTER -v $score
             ;;
+        post-promote)
+            if [ "$OCF_RESKEY_CRM_meta_notify_promote_uname" != "$NODENAME" ]; then
+                $CRM_MASTER -v 1
+            fi
     esac
 }
 
