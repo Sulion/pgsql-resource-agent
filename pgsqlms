@@ -909,7 +909,7 @@ pg_notify() {
             ;;
         post-promote)
             ocf_log debug "$__OCF_ACTION - notify: promoted: $OCF_RESKEY_CRM_meta_notify_promote_uname, I am: $NODENAME"
-            echo "$OCF_RESKEY_CRM_meta_notify_promote_uname" | grep -eq "^[[:space:]]*${NODENAME}[[:space:]]*$"
+            echo "$OCF_RESKEY_CRM_meta_notify_promote_uname" | grep -Eq "^[[:space:]]*${NODENAME}[[:space:]]*$"
             rc=$?
             # set master score to 1 to all slaves
             if [ $rc -ne 0 ]; then
