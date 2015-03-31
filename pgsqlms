@@ -898,15 +898,19 @@ pg_notify() {
 
     case $type_op in
         post-start)
+            ocf_log debug "$__OCF_ACTION - pg_notify,post-start: set master to 1"
             $CRM_MASTER -v 1
             ;;
         pre-promote)
             score=$(_promote_score)
-            ocf_log info "$__OCF_ACTION - notify : my score is $score."
+            ocf_log info "$__OCF_ACTION - notify: my score is $score."
+            ocf_log debug "$__OCF_ACTION - pg_notify,pre-promote: set master to $score"
             $CRM_MASTER -v $score
             ;;
         post-promote)
+            ocf_log debug "$__OCF_ACTION - notify: promoted: $OCF_RESKEY_CRM_meta_notify_promote_uname, I am: $NODENAME ?"
             if [ "$OCF_RESKEY_CRM_meta_notify_promote_uname" != "$NODENAME" ]; then
+                ocf_log debug "$__OCF_ACTION - pg_notify,post-promote: set master to 1"
                 $CRM_MASTER -v 1
             fi
     esac
