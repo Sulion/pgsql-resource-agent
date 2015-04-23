@@ -34,6 +34,8 @@ export PGPSQL="${OCF_RESKEY_bindir}/psql"
 export PGCTRLDATA="${OCF_RESKEY_bindir}/pg_controldata"
 export PGISREADY="${OCF_RESKEY_bindir}/pg_isready"
 export CRM_MASTER="${HA_SBIN_DIR}/crm_master -l reboot"
+export CRM_ATTRIBUTE="${HA_SBIN_DIR}/crm_attribute -l reboot"
+export CRM_NODE="${HA_SBIN_DIR}/crm_node"
 export NODENAME=$(ocf_local_nodename)
 
 function pgsql_validate_all() {
@@ -901,14 +903,32 @@ pg_notify() {
             $CRM_MASTER -v 1
             ;;
         pre-promote)
-            score=$(_promote_score)
-            ocf_log info "$__OCF_ACTION - notify : my score is $score."
-            $CRM_MASTER -v $score
-            ;;
+            my_score=$(_promote_score)
+            ocf_log info "$__OCF_ACTION - notify : my score is $my_score."
+            if ! $CRM_ATTRIBUTE --quiet --name lsn_score --query &> /dev/null ; then
+               # update the attribute "lsn_score" for the current node
+               $CRM_ATTRIBUTE --name lsn_score --update $my_score
+            else
+                master_score=100
+                for node in $($CRM_NODE -l)
+                do
+                    # get "lsn_score" for all nodes, and if any is greater than 
+                    # the score of the current node, we set master_score to prevent
+                    # this instance to be promoted
+                    node_score=$CRM_ATTRIBUTE --quiet --node $node --name lsn_score --query
+                    if [ $my_score -lt $node_score ] ; then
+                        master_score=1
+                        break
+                    fi
+                done
+                $CRM_MASTER -v $master_score
+            fi
+        ;;
         post-promote)
             if [ "$OCF_RESKEY_CRM_meta_notify_promote_uname" != "$NODENAME" ]; then
                 $CRM_MASTER -v 1
             fi
+            $CRM_ATTRIBUTE --name lsn_score --delete
     esac
 }
 
