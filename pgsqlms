@@ -931,6 +931,7 @@ pg_notify() {
                         master_score=1
                         break
                     fi
+                    unset node_score
                 fi
             done
 
