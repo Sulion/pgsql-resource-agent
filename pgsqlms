@@ -903,29 +903,36 @@ pg_notify() {
             $CRM_MASTER -v 1
             ;;
         pre-promote)
+            # compute score for current node
             my_score=$(_promote_score)
             ocf_log info "$__OCF_ACTION - notify : my score is $my_score."
-            # test if "lsn_score" attribute already exists
-            if ! $CRM_ATTRIBUTE --quiet --name lsn_score --query &> /dev/null ; then
-               # if it doesn't, update the attribute "lsn_score" for the 
-               # current node
-               $CRM_ATTRIBUTE --name lsn_score --update $my_score
-            else
-                # if it does, compare its value with the other nodes 
-                master_score=100
-                for node in $($CRM_NODE -l)
-                do
-                    # get "lsn_score" for all nodes, and if any is greater than 
-                    # the score of the current node, we set master_score to prevent
-                    # this instance to be promoted
-                    node_score=$($CRM_ATTRIBUTE -q --node $node --name lsn_score --query)
+
+            # update the attribute "lsn_score" for the current node
+            $CRM_ATTRIBUTE --name lsn_score --update $my_score
+            master_score=100
+
+            # parse all nodes eligible for promotion:
+            # (slaves + starting - stopping)
+            for node in $OCF_RESKEY_CRM_meta_notify_slave_uname $OCF_RESKEY_CRM_meta_notify_start_uname ; do
+                # exclude stopped resources and current node
+                if [ $node != $OCF_RESKEY_CRM_meta_notify_stop_uname -a $node != $(uname -n) ] ; then
+                    # wait for the other resource to update "lsn_score"
+                    node_score=$($CRM_ATTRIBUTE -q --node $node --name lsn_score --query 2>/dev/null)
+                    while [ -z "$node_score" ] ; do
+                        sleep 1
+                        node_score=$($CRM_ATTRIBUTE -q --node $node --name lsn_score --query 2>/dev/null)
+                    done
+                    # if the other resource outweighs current "lsn_score", 
+                    # downgrade "master_score" and exit loop
                     if [ $my_score -lt $node_score ] ; then
                         master_score=1
                         break
                     fi
-                done
-                $CRM_MASTER -v $master_score
-            fi
+                fi
+            done
+
+            # assign master score for current node
+            $CRM_MASTER -v $master_score
         ;;
         post-promote)
             if [ "$OCF_RESKEY_CRM_meta_notify_promote_uname" != "$NODENAME" ]; then
