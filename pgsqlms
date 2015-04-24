@@ -905,7 +905,7 @@ pg_notify() {
         pre-promote)
             # compute score for current node
             my_score=$(_promote_score)
-            ocf_log info "$__OCF_ACTION - notify : my score is $my_score."
+            ocf_log info "$__OCF_ACTION - notify : my lsn_score is $my_score."
 
             # update the attribute "lsn_score" for the current node
             $CRM_ATTRIBUTE --name lsn_score --update $my_score
@@ -916,20 +916,25 @@ pg_notify() {
             for node in $OCF_RESKEY_CRM_meta_notify_slave_uname $OCF_RESKEY_CRM_meta_notify_start_uname ; do
                 # exclude stopped resources and current node
                 if [ $node != $OCF_RESKEY_CRM_meta_notify_stop_uname -a $node != $(uname -n) ] ; then
+                    ocf_log info "$__OCF_ACTION - notify : getting lsn_score from node ${node}."
                     # wait for the other resource to update "lsn_score"
                     node_score=$($CRM_ATTRIBUTE -q --node $node --name lsn_score --query 2>/dev/null)
                     while [ -z "$node_score" ] ; do
                         sleep 1
                         node_score=$($CRM_ATTRIBUTE -q --node $node --name lsn_score --query 2>/dev/null)
                     done
+                    ocf_log info "$__OCF_ACTION - notify : lsn_score from node ${node} is ${node_score}."
                     # if the other resource outweighs current "lsn_score", 
                     # downgrade "master_score" and exit loop
                     if [ $my_score -lt $node_score ] ; then
+                        ocf_log info "$__OCF_ACTION - notify : $node has higher lsn_score."
                         master_score=1
                         break
                     fi
                 fi
             done
+
+            ocf_log info "$__OCF_ACTION - notify : my final score is ${master_score}."
 
             # assign master score for current node
             $CRM_MASTER -v $master_score
