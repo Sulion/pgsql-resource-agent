@@ -35,7 +35,6 @@ export PGCTRLDATA="${OCF_RESKEY_bindir}/pg_controldata"
 export PGISREADY="${OCF_RESKEY_bindir}/pg_isready"
 export CRM_MASTER="${HA_SBIN_DIR}/crm_master -l reboot"
 export CRM_ATTRIBUTE="${HA_SBIN_DIR}/crm_attribute -l reboot"
-export CRM_NODE="${HA_SBIN_DIR}/crm_node"
 export NODENAME=$(ocf_local_nodename)
 
 function pgsql_validate_all() {
