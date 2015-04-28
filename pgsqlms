@@ -37,6 +37,8 @@ export CRM_MASTER="${HA_SBIN_DIR}/crm_master -l reboot"
 export CRM_ATTRIBUTE="${HA_SBIN_DIR}/crm_attribute -l reboot"
 export NODENAME=$(ocf_local_nodename)
 
+current_action="$1"
+
 function pgsql_validate_all() {
     local rc
     local PGVERSION
@@ -301,9 +303,11 @@ _query() {
     local rc
     local ANS
     local QUERY="$1"
+    local connection_string="port=${OCF_RESKEY_pgport} dbname=postgres $2"
+
 
     ANS=$(_runuser "
-$PGPSQL -XAt --set='ON_ERROR_STOP=1' -p ${OCF_RESKEY_pgport} postgres <<EOQ
+$PGPSQL -XAt --set='ON_ERROR_STOP=1' '$connection_string' <<EOQ
 $QUERY
 EOQ
 " 2>/dev/null)
@@ -316,56 +320,6 @@ EOQ
     #   2: unable to connect
     #   3: query failed
     return $rc
-}
-
-# Convert LSN to decimal
-# FIXME tests!
-_lsn_to_decimal() {
-    local LSN="$1"
-    local wal seg
-
-    wal="0x${LSN%/*}"
-    seg="0x${LSN#*/}"
-
-    # we should rely on dc or bc as 0xff000000 * $wal overflow at some point.
-    # The overflow is around 80808080/xxxxxxxx on my plateform, that leave a lot
-    # of xact before failing
-    echo $((0xff000000 * $wal + $seg))
-}
-
-# Compute a promote score based on the latest LSN of the cluster.
-#
-_promote_score() {
-    local -i score
-    local lsn lastredo lastchkp
-
-    # FIXME: warning, the function call returns NULL if nothing has been
-    # received yet!
-    lsn=$(_query 'select pg_last_xlog_receive_location()')
-
-    if [ -z "$lsn" ]; then
-        lastredo=$("$PGCTRLDATA" ${OCF_RESKEY_pgdata} 2>/dev/null | \
-            sed -rn 's/^Latest checkpoint.s REDO location:\s+(.*)/\1/p' 2>/dev/null)
-        lastredo=$(_lsn_to_decimal $lastredo)
-
-        lastchkp=$("$PGCTRLDATA" ${OCF_RESKEY_pgdata} 2>/dev/null | \
-            sed -rn 's/^Latest checkpoint location:\s+(.*)/\1/p' 2>/dev/null)
-        lastchkp=$(_lsn_to_decimal $lastchkp)
-
-        score=$lastchkp
-        test $lastchkp -lt $lastredo && score=$lastredo
-    else
-        score=$(_lsn_to_decimal $lsn)
-    fi
-
-    # error overflow for now. We rise OCF_ERR_CONFIGURED to have a fatal error,
-    # not just a soft or hard one.
-    test $score -lt 0 && exit $OCF_ERR_CONFIGURED
-
-    ocf_log debug "$__OCF_ACTION - _promote_score: promote score is $score ($lsn)."
-
-    echo "$score"
-    return 0
 }
 
 # Checks to confirm if the instance is really started if _pg_isready returned
@@ -549,6 +503,11 @@ pg_start() {
         fi
 
         return $rc
+    fi
+
+    if [ "$current_action" == "start" ]; then
+        # set master score to 1 so the node can be promoted
+        $CRM_MASTER -v 1
     fi
 
     ocf_log error "$__OCF_ACTION - pg_start: instance $OCF_RESOURCE_INSTANCE failed to start."
@@ -785,8 +744,6 @@ pg_demote() {
     #
     # At this point, the instance **MUST** be stopped gracefully
     #
-    #master_score=$(_promote_score)
-    #crm_resource --resource $OCF_RESOURCE_INSTANCE --set-parameter last_lsn --parameter-value $master_score
 
     # Note: We do not need to handle the recovery.conf file here as pg_start()
     # deal with that itself. Equally, no need to wait for the start to complete
@@ -821,6 +778,7 @@ pg_promote() {
             return $OCF_SUCCESS
             ;;
         "$OCF_NOT_RUNNING")
+            # FIXME should not happen
             # Currently not running. Need to start before promoting.
             ocf_log info "$__OCF_ACTION - pg_promote: currently not running, starting it."
             pg_start
@@ -875,7 +833,10 @@ pg_promote() {
 # Called on pre and post actions.
 pg_notify() {
     local type_op
-    local score
+    local promoted_node
+    local max_delta
+    local my_lsn
+    local lsn_diff
 
     type_op="${OCF_RESKEY_CRM_meta_notify_type}-${OCF_RESKEY_CRM_meta_notify_operation}"
 
@@ -898,52 +859,58 @@ pg_notify() {
     ocf_log debug "$__OCF_ACTION - pg_notify: slave_uname: $OCF_RESKEY_CRM_meta_notify_slave_uname"
 
     case $type_op in
-        post-start)
-            $CRM_MASTER -v 1
-            ;;
         pre-promote)
-            # compute score for current node
-            my_score=$(_promote_score)
-            ocf_log info "$__OCF_ACTION - notify : my lsn_score is $my_score."
 
-            # update the attribute "lsn_score" for the current node
-            $CRM_ATTRIBUTE --name lsn_score --update $my_score
-            master_score=100
+        # Use communication between instances to have them compare each others
+        # xlog location.
+        # Only one node : the one designed by 
+        #     $OCF_RESKEY_CRM_meta_notify_promote_resource: that way, if it is indeed
+        #     the good choice, no need to break the pre-promote
+        #     if not, use crm_master to allocate master_score to the highest LSN 
+        #     slave, thus hopefuly breaking the pre-promote and triggering another
+        #     round
 
-            # parse all nodes eligible for promotion:
-            # (slaves + starting - stopping)
-            for node in $OCF_RESKEY_CRM_meta_notify_slave_uname $OCF_RESKEY_CRM_meta_notify_start_uname ; do
-                # exclude stopped resources and current node
-                if [ $node != $OCF_RESKEY_CRM_meta_notify_stop_uname -a $node != $(uname -n) ] ; then
-                    ocf_log info "$__OCF_ACTION - notify : getting lsn_score from node ${node}."
-                    # wait for the other resource to update "lsn_score"
-                    node_score=$($CRM_ATTRIBUTE -q --node $node --name lsn_score --query 2>/dev/null)
-                    while [ -z "$node_score" ] ; do
-                        sleep 1
-                        node_score=$($CRM_ATTRIBUTE -q --node $node --name lsn_score --query 2>/dev/null)
-                    done
-                    ocf_log info "$__OCF_ACTION - notify : lsn_score from node ${node} is ${node_score}."
-                    # if the other resource outweighs current "lsn_score", 
-                    # downgrade "master_score" and exit loop
-                    if [ $my_score -lt $node_score ] ; then
-                        ocf_log info "$__OCF_ACTION - notify : $node has higher lsn_score."
-                        master_score=1
-                        break
+            # the node currently chosen for promotion acts as a reference 
+            # point and compare itself the the other nodes
+            if [ "$OCF_RESKEY_CRM_meta_notify_promote_uname" == $(uname -n) ]; then
+
+                promoted_node="$OCF_RESKEY_CRM_meta_notify_promote_uname"
+                max_delta=0
+
+                # get xlog location for the current node
+                my_lsn=$(_query "select pg_last_xlog_receive_location()")
+                ocf_log debug "$__OCF_ACTION - notify : my xlog location is $my_lsn."
+
+                # parse all nodes eligible for promotion:
+                # (slaves + starting - stopping)
+                for node in $OCF_RESKEY_CRM_meta_notify_slave_uname $OCF_RESKEY_CRM_meta_notify_start_uname ; do
+
+                    # exclude stopped resources and current node
+                    if [ $node != $OCF_RESKEY_CRM_meta_notify_stop_uname -a $node != $(uname -n) ] ; then
+                        ocf_log info "$__OCF_ACTION - notify : getting difference with xlog location from node ${node}."
+
+                        # get difference with distant node xlog location
+                        lsn_diff=$(_query "select pg_xlog_location_diff(\'${my_lsn}\'::text, pg_last_xlog_receive_location())" "host=$node")
+
+                        ocf_log debug "$__OCF_ACTION - notify : lsn_diff from node ${node} is ${lsn_diff}."
+
+                        # if the distant node xlog location is farther than 
+                        # the max found at this point, keep it
+                        if [ $lsn_diff -gt $max_delta ]; then
+                            promoted_node=$node
+                            max_delta=$lsn_diff
+                            ocf_log debug "$__OCF_ACTION - notify : found ${node} is a better candidate to promotion."
+                        fi
+
                     fi
-                    unset node_score
-                fi
-            done
+                done
 
-            ocf_log info "$__OCF_ACTION - notify : my final score is ${master_score}."
+                ocf_log info "$__OCF_ACTION - notify : set ${node} as a master."
 
-            # assign master score for current node
-            $CRM_MASTER -v $master_score
-        ;;
-        post-promote)
-            if [ "$OCF_RESKEY_CRM_meta_notify_promote_uname" != "$NODENAME" ]; then
-                $CRM_MASTER -v 1
+                # assign master score for current node
+                $CRM_MASTER --node $promoted_node --update 1000
             fi
-            $CRM_ATTRIBUTE --name lsn_score --delete
+        ;;
     esac
 }
 
@@ -956,7 +923,7 @@ pg_reload() {
 }
 
 # Validate everything is fine before running the actions
-case $1 in
+case $current_action in
     start|stop|reload|monitor|promote|demote|notify)
         pgsql_validate_all || exit $? ;;
     # no need to validate for meta-data, methods or validate-all
@@ -964,7 +931,7 @@ esac
 
 
 # Run action
-case $1 in
+case $current_action in
     start)
         pg_start
         exit $?;;
