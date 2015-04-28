@@ -873,7 +873,7 @@ pg_notify() {
 
             # the node currently chosen for promotion acts as a reference 
             # point and compare itself the the other nodes
-            if [ "$OCF_RESKEY_CRM_meta_notify_promote_uname" == $(uname -n) ]; then
+            if $(echo "$OCF_RESKEY_CRM_meta_notify_promote_uname" | grep -q "$NODENAME"); then
 
                 promoted_node="$OCF_RESKEY_CRM_meta_notify_promote_uname"
                 max_delta=0
