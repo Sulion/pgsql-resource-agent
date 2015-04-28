@@ -498,16 +498,17 @@ pg_start() {
 
         if [ $rc -eq $OCF_SUCCESS ]; then
             ocf_log info  "$__OCF_ACTION - pg_start: instance $OCF_RESOURCE_INSTANCE started."
+
+            if [ "$current_action" == "start" ]; then
+                # set master score to 1 so the node can be promoted
+                ocf_log debug "$__OCF_ACTION - pg_start: instance started as a secondary, set master score to 1."
+                $CRM_MASTER -v 1
+            fi
         else
             ocf_log error "$__OCF_ACTION - pg_start: instance $OCF_RESOURCE_INSTANCE is not running as a slave (returned $rc)."
         fi
 
         return $rc
-    fi
-
-    if [ "$current_action" == "start" ]; then
-        # set master score to 1 so the node can be promoted
-        $CRM_MASTER -v 1
     fi
 
     ocf_log error "$__OCF_ACTION - pg_start: instance $OCF_RESOURCE_INSTANCE failed to start."
