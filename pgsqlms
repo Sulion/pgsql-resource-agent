@@ -888,7 +888,7 @@ pg_notify() {
                         ocf_log info "$__OCF_ACTION - notify : getting difference with xlog location from node ${node}."
 
                         # get difference with distant node xlog location
-                        lsn_diff=$(_query "select pg_xlog_location_diff('${my_lsn}'::text, pg_last_xlog_receive_location())" "host=$node")
+                        lsn_diff=$(_query "select pg_xlog_location_diff('${my_lsn}', pg_last_xlog_receive_location())" "host=$node")
 
                         ocf_log debug "$__OCF_ACTION - notify : lsn_diff from node ${node} is ${lsn_diff}."
 
