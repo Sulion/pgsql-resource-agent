@@ -310,7 +310,7 @@ _query() {
 $PGPSQL -XAt --set='ON_ERROR_STOP=1' '$connection_string' <<EOQ
 $QUERY
 EOQ
-" 2>/dev/null)
+")
     rc=$?
 
     echo "$ANS"
