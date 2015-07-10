@@ -34,7 +34,9 @@ export PGPSQL="${OCF_RESKEY_bindir}/psql"
 export PGCTRLDATA="${OCF_RESKEY_bindir}/pg_controldata"
 export PGISREADY="${OCF_RESKEY_bindir}/pg_isready"
 export CRM_MASTER="${HA_SBIN_DIR}/crm_master -l reboot"
-export CRM_ATTRIBUTE="${HA_SBIN_DIR}/crm_attribute -l reboot"
+export CRM_ATTRIBUTE="${HA_SBIN_DIR}/crm_attribute -l reboot -t status"
+export CRM_NODE="${HA_SBIN_DIR}/crm_node"
+export CRM_RESOURCE="${HA_SBIN_DIR}/crm_resource"
 export NODENAME=$(ocf_local_nodename)
 
 current_action="$1"
@@ -49,6 +51,9 @@ function pgsql_validate_all() {
     check_binary "$PGCTRLDATA"
     check_binary "$PGISREADY"
     check_binary "${HA_SBIN_DIR}/crm_master"
+    check_binary "${HA_SBIN_DIR}/crm_attribute"
+    check_binary "$CRM_NODE"
+    check_binary "$CRM_RESOURCE"
     check_binary "cp"
     check_binary "sed"
     check_binary "grep"
@@ -150,7 +155,15 @@ ocf_meta_data() {
       <content type="string" default="${OCF_RESKEY_pgdata_template}/recovery.conf.pcmk" />
     </parameter>
 
-    <parameter name="last_lsn" unique="0" required="0">
+    <parameter name="primary_node" unique="0" required="0">
+      <longdesc lang="en">
+        FIXME: DON'T TOUCH THIS
+      </longdesc>
+      <shortdesc lang="en">FIXME: DON'T TOUCH THIS</shortdesc>
+      <content type="string" default="0" />
+    </parameter>
+
+    <parameter name="last_primary_lsn" unique="0" required="0">
       <longdesc lang="en">
         FIXME: DON'T TOUCH THIS
       </longdesc>
@@ -322,6 +335,88 @@ EOQ
     return $rc
 }
 
+# Check lsn diff with the current master, and adapt the master score so that 
+# the instance with the lower diff will be candidate for promotion
+_check_lsn_diff() {
+    local lsn_primary
+    local lsn_diff
+    local primary_candidate
+    local min_lsndiff
+    local node_lsndiff
+
+    # If the primary node attribute has been set, then at least one promotion
+    # has occured, so we need to check lsn diff
+    if [ -n ${OCF_RESKEY_primary_node} ] ; then
+
+       lsn_primary=$(_query "select pg_xlog_current_location()" "host=${OCF_RESKEY_primary_node}")
+
+        # Continue this check only if we could get current lsn from the primary
+        if [ -n "$lsn_primary" ] ; then
+            ocf_log debug "$__OCF_ACTION - _check_lsn_diff: primary node lsn is: ${lsn_primary}."
+
+            # Get lsn diff with primary current lsn
+            lsn_diff=$(_query "select pg_xlog_location_diff('${lsn_primary}', pg_last_xlog_receive_location()")
+            ocf_log debug "$__OCF_ACTION - _check_lsn_diff: current node lsn diff with primary lsn: ${lsn_diff}."
+
+            # Update lsn_diff node attribute for this node
+            $CRM_ATTRIBUTE --node $NODENAME --name lsn_diff --update $lsn_diff
+    
+            min_lsndiff=$lsn_diff
+    
+            # Parse the list of available nodes
+            for node in $($CRM_NODE --partition) ; do
+    
+                if [ "$node" != "$NODENAME" -a "$node" != "$OCF_RESKEY_primary_node" ] ; then
+                    node_lsndiff=$($CRM_ATTRIBUTE -q --node $node --query --name lsn_diff)
+                    ocf_log debug "$__OCF_ACTION - _check_lsn_diff: comparing with ${node}: lsn diff is ${node_lsndiff}."
+    
+                    # Select the node that had the lower diff, if lower than the 
+                    # current node diff
+                    if [ -n "$node_lsndiff" -a $node_lsndiff -lt $min_lsndiff ] ; then
+                        primary_candidate=$node
+                        min_lsndiff=$node_lsndiff
+                        ocf_log debug "$__OCF_ACTION - _check_lsn_diff: found ${node} is a better candidate to promotion."
+                    fi
+    
+                fi
+    
+            done
+
+            # Update last_lsn_primary resource parameter with the value we get
+            $CRM_RESOURCE --resource $OCF_RESOURCE_INSTANCE --set-parameter last_primary_lsn --parameter-value "${lsn_primary}"
+
+            # Parse the list of available nodes a second time and adapt the 
+            # master scores accordingly
+            # FIXME avoid calling crm_master update if scores did not change ?
+            for node in $($CRM_NODE --partition) ; do
+    
+                if [ "$node" == "$primary_candidate" ] ; then
+                    ocf_log info "$__OCF_ACTION - _check_lsn_diff: ${primary_candidate} is the better candidate to promotion, updating score accordingly."
+                    # Set node master score
+                    $CRM_MASTER --node $primary_candidate --update 1000
+                elif [ "$node" != "$OCF_RESKEY_primary_node" -a "$node" != "$primary_candidate" ] ; then
+                    ocf_log info "$__OCF_ACTION - _check_lsn_diff: node $node is not the better candidate to promotion, updating score accordingly."
+                    # Set node master score
+                    $CRM_MASTER --node $node --update 1
+                fi
+
+            done
+                
+            return $OCF_SUCCESS
+        fi
+
+        ocf_log info "$__OCF_ACTION - _check_lsn_diff: could not get current lsn from primary instance ${OCF_RESKEY_primary_node}."
+        return $OCF_ERR_GENERIC
+            
+    fi
+
+    ocf_log debug "$__OCF_ACTION - _check_lsn_diff: primary_node attribute not set, there was probably no promotion yet."
+    return $OCF_SUCCESS
+
+# WARNING will crm_master update trigger a promotion ?
+
+}
+
 # Checks to confirm if the instance is really started if _pg_isready returned
 # it should be the case, and to identify whether the instance is Primary or 
 # Secondary
@@ -332,7 +427,8 @@ _confirm_started() {
     local controldata_rc
 
     if [ $OCF_CHECK_LEVEL -ge 10 ]; then
-        # Hard check, call psql and pg_is_in_recovery()
+        # Hard check, call psql and pg_is_in_recovery(), and check lsn diff
+
         is_in_recovery=$(_query "SELECT pg_is_in_recovery()")
         query_rc=$?
 
@@ -341,6 +437,8 @@ _confirm_started() {
             if [ "$is_in_recovery" = "t" ]; then
                 # The instance is a Secondary.
                 ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): instance $OCF_RESOURCE_INSTANCE is a Secondary."
+                # Check lsn diff with current master if any
+                _check_lsn_diff
                 return $OCF_SUCCESS
             elif [ "$is_in_recovery" = "f" ]; then
                 # The instance is a Primary.
@@ -455,7 +553,7 @@ pg_start() {
     if [ $rc -eq $OCF_SUCCESS ]; then
         ocf_log info "$__OCF_ACTION - pg_start: instance $OCF_RESOURCE_INSTANCE already started."
         return $OCF_SUCCESS
-    elif [ $rc -ne $OCF_NOT_RUNNING ] ; then
+    if [ $rc -ne $OCF_NOT_RUNNING ] ; then
         ocf_log error "$__OCF_ACTION - pg_start: unexpected state for instance $OCF_RESOURCE_INSTANCE (returned $rc)."
         return $OCF_ERR_GENERIC
     fi
@@ -502,7 +600,7 @@ pg_start() {
             if [ "$current_action" == "start" ]; then
                 # set master score to 1 so the node can be promoted
                 ocf_log debug "$__OCF_ACTION - pg_start: instance started as a secondary, set master score to 1."
-                $CRM_MASTER -v 1
+                $CRM_MASTER --update 1
             fi
         else
             ocf_log error "$__OCF_ACTION - pg_start: instance $OCF_RESOURCE_INSTANCE is not running as a slave (returned $rc)."
@@ -799,7 +897,56 @@ pg_promote() {
     # At this point, the instance **MUST** be started as a slave
     #
 
-    # promoting
+    # If primary_node resource attribute has been set, this is not the first 
+    # promotion, thus it is necessary to compare lsn between nodes
+    if [ -n "$OCF_RESKEY_primary_node" ] ; then
+        local node_to_promote
+        local min_lsndiff
+        local node_lsndiff
+    
+        min_lsndiff=$($CRM_ATTRIBUTE --node $NODENAME -q --query --name lsn_diff)
+    
+        # Parse the list of available nodes
+        # FIXME instead of crm_node, use a resource attribute set during 
+        #   notify using $OCF_RESKEY_CRM_meta_notify_slave_uname and 
+        #   $OCF_RESKEY_CRM_meta_notify_start_uname ?
+        for node in $($CRM_NODE --partition) ; do
+    
+            if [ "$node" != "$NODENAME" ] ; then
+                node_lsndiff=$($CRM_ATTRIBUTE -q --node $node --query --name lsn_diff)
+                ocf_log debug "$__OCF_ACTION - pg_promote: comparing with ${node}: lsn diff is ${node_lsndiff}."
+    
+                # Select the node that had the lower diff, if lower than the 
+                # current node diff
+                if [ -n "$node_lsndiff" -a $node_lsndiff -lt $min_lsndiff ] ; then
+                    node_to_promote=$node
+                    min_lsndiff=$node_lsndiff
+                    ocf_log debug "$__OCF_ACTION - pg_promote: found ${node} is a better candidate to promotion."
+                fi
+
+            fi
+
+        done
+    
+        # If any node has been selected, we adapt the master scores accordingly
+        # and break the current promotion
+        if [ -n "$node_to_promote" ] ; then
+            ocf_log info "$__OCF_ACTION - pg_promote: ${node_to_promote} is the better candidate to promotion, aborting current promotion."
+            # reset current node master score
+            $CRM_MASTER --update 1
+            # set promotion candidate master score
+            $CRM_MASTER --node $node_to_promote --update 1000
+            # We fail the promotion to trigger another promotion transition 
+            # with the new scores
+            # FIXME is there any other way at this point to trigger this 
+            # without failing the promote action ?
+            return $OCF_ERR_GENERIC
+        fi
+
+        # Else, we will keep on promoting the current node
+
+    fi
+
     _runuser "$PGCTL -D ${OCF_RESKEY_pgdata} -w promote &>/dev/null"
     rc=$?
 
@@ -824,6 +971,9 @@ pg_promote() {
 
     if [ $rc -eq $OCF_RUNNING_MASTER -a ! -f "${OCF_RESKEY_pgdata}/recovery.conf" ]; then
         ocf_log info "$__OCF_ACTION - pg_promote: promote complete."
+        # Delete master score as this node won't be a candidate for promotion 
+        # until it becomes a secondary
+        $CRM_MASTER --delete
         return $OCF_SUCCESS
     fi
 
@@ -861,53 +1011,26 @@ pg_notify() {
 
     case $type_op in
         pre-promote)
-            # Use communication between instances to have them compare each 
-            # others xlog location.
-            # Only one node acts: the one designed by 
-            # $OCF_RESKEY_CRM_meta_notify_promote_resource
 
-            # the node currently chosen for promotion acts as a reference 
-            # point and compare itself the the other nodes
-            if [ "${OCF_RESKEY_CRM_meta_notify_promote_uname/$NODENAME}" != "$OCF_RESKEY_CRM_meta_notify_promote_uname" ]; then
+            local lsn_diff
 
-                promoted_node="$OCF_RESKEY_CRM_meta_notify_promote_uname"
-                max_delta=0
+            ocf_log info "$__OCF_ACTION - notify : promoting instance on node ${OCF_RESKEY_CRM_meta_notify_promote_uname}."
 
-                # get xlog location for the current node
-                my_lsn=$(_query "select pg_last_xlog_receive_location()")
-                ocf_log debug "$__OCF_ACTION - notify : my xlog location is $my_lsn."
-
-                # parse all nodes eligible for promotion:
-                # (slaves + starting - stopping)
-                for node in $OCF_RESKEY_CRM_meta_notify_slave_uname $OCF_RESKEY_CRM_meta_notify_start_uname ; do
-
-                    ocf_log debug "$__OCF_ACTION - notify : comparing with ${node}."
-
-                    # exclude stopped resources and current node
-                    if [ "${OCF_RESKEY_CRM_meta_notify_stop_uname/$node}" == "$OCF_RESKEY_CRM_meta_notify_stop_uname" -a "$node" != "$NODENAME" ]; then
-                        ocf_log info "$__OCF_ACTION - notify : getting difference with xlog location from node ${node}."
-
-                        # get difference with distant node xlog location
-                        lsn_diff=$(_query "select pg_xlog_location_diff(pg_last_xlog_receive_location(), '${my_lsn}')" "host=$node")
-
-                        ocf_log debug "$__OCF_ACTION - notify : lsn_diff from node ${node} is ${lsn_diff}."
-
-                        # if the distant node xlog location is farther than 
-                        # the max found at this point, keep it
-                        if [ $lsn_diff -gt $max_delta ]; then
-                            promoted_node=$node
-                            max_delta=$lsn_diff
-                            ocf_log debug "$__OCF_ACTION - notify : found ${node} is a better candidate to promotion."
-                        fi
-
-                    fi
-                done
-
-                ocf_log info "$__OCF_ACTION - notify : set ${promoted_node} as a master."
-
-                # assign master score for current node
-                $CRM_MASTER --node $promoted_node --update 1000
+            # Compute lsn difference with last known primary position, 
+            # pg_promote will then check if instance to be promoted within the
+            # current transition is the good one
+            # If this is the first promotion, last_primary_lsn will not be set
+            # in that case, there is no point to try computing this diff
+            if [ -n "$OCF_RESKEY_last_primary_lsn" ] ; then
+                lsn_diff=$(_query "select pg_xlog_location_diff('${OCF_RESKEY_last_primary_lsn}', pg_last_xlog_receive_location())")
+                ocf_log debug "$__OCF_ACTION - notify : current node lsn diff with primary last known lsn: ${lsn_diff}."
+                $CRM_ATTRIBUTE --node $NODENAME --name lsn_diff --update $lsn_diff
             fi
+
+        ;;
+        post-promote)
+            # FIXME do we need to do something else at this point ?
+            ocf_log info "$__OCF_ACTION - notify : instance on node ${OCF_RESKEY_CRM_meta_notify_promote_uname} has been promoted."
         ;;
     esac
 }
