@@ -349,19 +349,20 @@ _check_lsn_diff() {
     # has occured, so we need to check lsn diff
     if [ -n "${OCF_RESKEY_primary_node}" ] ; then
 
-       lsn_primary=$(_query "select pg_xlog_current_location()" "host=${OCF_RESKEY_primary_node}")
+       lsn_primary=$(_query "select pg_current_xlog_location()" "host=${OCF_RESKEY_primary_node}")
 
         # Continue this check only if we could get current lsn from the primary
         if [ -n "$lsn_primary" ] ; then
             ocf_log debug "$__OCF_ACTION - _check_lsn_diff: primary node lsn is: ${lsn_primary}."
 
             # Get lsn diff with primary current lsn
-            lsn_diff=$(_query "select pg_xlog_location_diff('${lsn_primary}', pg_last_xlog_receive_location()")
+            lsn_diff=$(_query "select pg_xlog_location_diff('${lsn_primary}', pg_last_xlog_receive_location())")
             ocf_log debug "$__OCF_ACTION - _check_lsn_diff: current node lsn diff with primary lsn: ${lsn_diff}."
 
             # Update lsn_diff node attribute for this node
             $CRM_ATTRIBUTE --node $NODENAME --name lsn_diff --update $lsn_diff
     
+            primary_candidate=$NODENAME
             min_lsndiff=$lsn_diff
     
             # Parse the list of available nodes
@@ -369,14 +370,20 @@ _check_lsn_diff() {
     
                 if [ "$node" != "$NODENAME" -a "$node" != "$OCF_RESKEY_primary_node" ] ; then
                     node_lsndiff=$($CRM_ATTRIBUTE -q --node $node --query --name lsn_diff)
-                    ocf_log debug "$__OCF_ACTION - _check_lsn_diff: comparing with ${node}: lsn diff is ${node_lsndiff}."
+
+                    if [ -n "$node_lsndiff" ] ; then
+                        ocf_log debug "$__OCF_ACTION - _check_lsn_diff: comparing with ${node}: lsn diff is ${node_lsndiff}."
     
-                    # Select the node that had the lower diff, if lower than the 
-                    # current node diff
-                    if [ -n "$node_lsndiff" -a $node_lsndiff -lt $min_lsndiff ] ; then
-                        primary_candidate=$node
-                        min_lsndiff=$node_lsndiff
-                        ocf_log debug "$__OCF_ACTION - _check_lsn_diff: found ${node} is a better candidate to promotion."
+                        # Select the node that had the lower diff, if lower 
+                        # than the current node diff
+                        if [ $node_lsndiff -lt $min_lsndiff ] ; then
+                            primary_candidate=$node
+                            min_lsndiff=$node_lsndiff
+                            ocf_log debug "$__OCF_ACTION - _check_lsn_diff: found ${node} is a better candidate to promotion."
+                        fi
+
+                    else
+                        ocf_log debug "$__OCF_ACTION - _check_lsn_diff: attribute lsn_node not set for node ${node}, skipping."
                     fi
     
                 fi
@@ -682,6 +689,8 @@ pg_monitor() {
         ocf_log debug "$__OCF_ACTION - pg_monitor($OCF_CHECK_LEVEL): monitor is a probe."
     fi
 
+    OCF_CHECK_LEVEL=10
+
     # First check, verify if the instance is listening
     _pg_isready
     pgisready_rc=$?
@@ -973,6 +982,8 @@ pg_promote() {
 
     if [ $rc -eq $OCF_RUNNING_MASTER -a ! -f "${OCF_RESKEY_pgdata}/recovery.conf" ]; then
         ocf_log info "$__OCF_ACTION - pg_promote: promote complete."
+        # Set primary_node parameter
+        $CRM_RESOURCE --resource $OCF_RESOURCE_INSTANCE --set-parameter primary_node --parameter-value "${NODENAME}"
         # Set master score to 1001 for this node so it sticks to this role
         $CRM_MASTER --update 1001
         return $OCF_SUCCESS
