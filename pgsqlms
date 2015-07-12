@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#   Resource Agent for managing foobar resources.
+#   Resource Agent for managing PostgreSQL resources.
 #
 #   License:      PostgreSQL License (BSD Like)
 #   (c) 2012-2013 Jehan-Guillaume de Rorthais, Maël Rimbault
@@ -337,6 +337,7 @@ EOQ
 
 # Check lsn diff with the current master, and adapt the master score so that 
 # the instance with the lower diff will be candidate for promotion
+#
 _check_lsn_diff() {
     local lsn_primary
     local lsn_diff
@@ -346,7 +347,7 @@ _check_lsn_diff() {
 
     # If the primary node attribute has been set, then at least one promotion
     # has occured, so we need to check lsn diff
-    if [ -n ${OCF_RESKEY_primary_node} ] ; then
+    if [ -n "${OCF_RESKEY_primary_node}" ] ; then
 
        lsn_primary=$(_query "select pg_xlog_current_location()" "host=${OCF_RESKEY_primary_node}")
 
@@ -553,7 +554,7 @@ pg_start() {
     if [ $rc -eq $OCF_SUCCESS ]; then
         ocf_log info "$__OCF_ACTION - pg_start: instance $OCF_RESOURCE_INSTANCE already started."
         return $OCF_SUCCESS
-    if [ $rc -ne $OCF_NOT_RUNNING ] ; then
+    elif [ $rc -ne $OCF_NOT_RUNNING ] ; then
         ocf_log error "$__OCF_ACTION - pg_start: unexpected state for instance $OCF_RESOURCE_INSTANCE (returned $rc)."
         return $OCF_ERR_GENERIC
     fi
@@ -611,6 +612,7 @@ pg_start() {
 
     ocf_log error "$__OCF_ACTION - pg_start: instance $OCF_RESOURCE_INSTANCE failed to start."
     return $OCF_ERR_GENERIC
+
 }
 
 # Stop the PostgreSQL instance
@@ -971,9 +973,8 @@ pg_promote() {
 
     if [ $rc -eq $OCF_RUNNING_MASTER -a ! -f "${OCF_RESKEY_pgdata}/recovery.conf" ]; then
         ocf_log info "$__OCF_ACTION - pg_promote: promote complete."
-        # Delete master score as this node won't be a candidate for promotion 
-        # until it becomes a secondary
-        $CRM_MASTER --delete
+        # Set master score to 1001 for this node so it sticks to this role
+        $CRM_MASTER --update 1001
         return $OCF_SUCCESS
     fi
 
